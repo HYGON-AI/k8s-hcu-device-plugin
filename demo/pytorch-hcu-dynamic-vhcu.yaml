@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hygon Information Technology Co., Ltd.
+
+# Dynamically split vHCU example (HAMi mode).
+# Prerequisites:
+#   1. The node is labeled with hcu=on
+#   2. k8s-hcu-plugin-hami.yaml is deployed (strategy=hami)
+#   3. k8s-hcu-scheduler is deployed (admission webhook + scheduler)
+# Note: hcucores is the compute share (1-100), hcumem is the memory request in MiB.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hcu-dynamic-vhcu-demo
+spec:
+  containers:
+    - name: hcu-dynamic-vhcu-demo
+      image: harbor.sourcefind.cn:5443/hcu/admin/base/pytorch:2.1.0-ubuntu22.04-dtk24.04.2-py3.10
+      command: [ "/bin/bash", "-c", "--" ]
+      args: [ "sleep infinity & wait" ]
+      resources:
+        limits:
+          hygon.com/hcunum: 1        # request 1 HCU slot
+          hygon.com/hcucores: 30     # request 30% of the compute
+          hygon.com/hcumem: 8192     # request 8192 MiB (8 GiB) of memory

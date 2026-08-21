@@ -1,0 +1,75 @@
+{{/*
+SPDX-License-Identifier: Apache-2.0
+Copyright 2026 Hygon Information Technology Co., Ltd.
+*/}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hcu-device-plugin-mig
+  labels:
+  {{- include "k8s-hcu-plugin-mig.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      name: hcu-dp-ds-mig
+    {{- include "k8s-hcu-plugin-mig.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: hcu-dp-ds-mig
+      {{- include "k8s-hcu-plugin-mig.selectorLabels" . | nindent 8 }}
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ""
+    spec:
+      containers:
+      - env:
+        - name: PULSE
+          value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.pulse }}
+        - name: RESOURCE_REGISTER_STRATEGY
+          value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.resourceRegisterStrategy
+            }}
+        - name: LOG_SEVERITY
+          value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.logSeverity }}
+        - name: LOG_LEVEL
+          value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.logLevel }}
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.hcuDevicePluginMig.hcuDpCntr.image.repository }}:{{ .Values.hcuDevicePluginMig.hcuDpCntr.image.tag
+          | default .Chart.AppVersion }}
+        name: hcu-dp-cntr
+        resources: {}
+        securityContext: {{- toYaml .Values.hcuDevicePluginMig.hcuDpCntr.containerSecurityContext
+          | nindent 10 }}
+        volumeMounts:
+        - mountPath: /var/lib/kubelet/device-plugins
+          name: dp
+        - mountPath: /dev
+          name: dev
+        - mountPath: /etc/dmi_mig_config
+          name: dmi-mig
+          readOnly: true
+        - mountPath: /opt/hyhal
+          name: hyhal
+          readOnly: true
+      nodeSelector: {{- toYaml .Values.hcuDevicePluginMig.nodeSelector | nindent 8 }}
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/device-plugins
+        name: dp
+      - hostPath:
+          path: /dev
+        name: dev
+      - hostPath:
+          path: /etc/dmi_mig_config
+          type: DirectoryOrCreate
+        name: dmi-mig
+      - hostPath:
+          path: /opt/hyhal
+        name: hyhal

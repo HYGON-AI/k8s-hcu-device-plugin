@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hygon Information Technology Co., Ltd.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hcu-device-plugin-mig
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: hcu-dp-ds-mig
+  template:
+    metadata:
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ""
+      labels:
+        name: hcu-dp-ds-mig
+    spec:
+      nodeSelector:
+        hcu-mode: mig
+        hygon.com/hcu: "true"
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Exists
+      containers:
+        - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.0
+          name: hcu-dp-cntr
+          securityContext:
+            privileged: true
+          env:
+            - name: "PULSE"
+              value: "30"
+            - name: "RESOURCE_REGISTER_STRATEGY"
+              value: "mig"
+            - name: "LOG_SEVERITY"
+              value: "INFO"
+            - name: "LOG_LEVEL"
+              value: "2"
+            - name: "NODE_NAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: dp
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+            - name: dmi-mig
+              mountPath: /etc/dmi_mig_config
+              readOnly: true
+            - name: hyhal
+              readOnly: true
+              mountPath: /opt/hyhal
+      volumes:
+        - name: dp
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: dmi-mig
+          hostPath:
+            path: /etc/dmi_mig_config
+            type: DirectoryOrCreate
+        - name: hyhal
+          hostPath:
+            path: /opt/hyhal

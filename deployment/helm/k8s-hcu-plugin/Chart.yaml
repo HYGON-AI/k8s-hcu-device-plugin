@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hygon Information Technology Co., Ltd.
+
+apiVersion: v2
+name: k8s-hcu-plugin
+description: A Helm chart for Kubernetes
+type: application
+version: "v3.0.0"
+appVersion: "v3.0.0"

@@ -1,0 +1,91 @@
+{{/*
+SPDX-License-Identifier: Apache-2.0
+Copyright 2026 Hygon Information Technology Co., Ltd.
+*/}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hcu-device-plugin
+  labels:
+  {{- include "k8s-hcu-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      name: hcu-dp-ds
+    {{- include "k8s-hcu-plugin.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        name: hcu-dp-ds
+      {{- include "k8s-hcu-plugin.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: hygon.com/hcu
+                operator: In
+                values:
+                - "true"
+              - key: hcu-mode
+                operator: NotIn
+                values:
+                - mig
+              - key: hcu
+                operator: NotIn
+                values:
+                - "on"
+      containers:
+      - env:
+        - name: PULSE
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.pulse }}
+        - name: RESOURCE_REGISTER_STRATEGY
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.resourceRegisterStrategy
+            }}
+        - name: LOG_SEVERITY
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.logSeverity }}
+        - name: LOG_LEVEL
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.logLevel }}
+        - name: POLICY
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.policy }}
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.hcuDevicePlugin.hcuDpCntr.image.repository }}:{{ .Values.hcuDevicePlugin.hcuDpCntr.image.tag
+          | default .Chart.AppVersion }}
+        name: hcu-dp-cntr
+        resources: {}
+        securityContext: {{- toYaml .Values.hcuDevicePlugin.hcuDpCntr.containerSecurityContext
+          | nindent 10 }}
+        volumeMounts:
+        - mountPath: /var/lib/kubelet/device-plugins
+          name: dp
+        - mountPath: /dev
+          name: dev
+        - mountPath: /etc/vdev
+          name: etc-vdev
+          readOnly: true
+        - mountPath: /opt/hyhal
+          name: hyhal
+          readOnly: true
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/device-plugins
+        name: dp
+      - hostPath:
+          path: /etc/vdev
+          type: DirectoryOrCreate
+        name: etc-vdev
+      - hostPath:
+          path: /dev
+        name: dev
+      - hostPath:
+          path: /opt/hyhal
+        name: hyhal

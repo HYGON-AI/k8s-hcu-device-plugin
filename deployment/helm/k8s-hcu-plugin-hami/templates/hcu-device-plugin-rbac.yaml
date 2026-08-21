@@ -1,0 +1,53 @@
+{{/*
+SPDX-License-Identifier: Apache-2.0
+Copyright 2026 Hygon Information Technology Co., Ltd.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hcu-device-plugin
+  labels:
+  {{- include "k8s-hcu-plugin-hami.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - update
+  - list
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - update
+  - patch
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hcu-device-plugin
+  labels:
+  {{- include "k8s-hcu-plugin-hami.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hcu-device-plugin
+subjects:
+- kind: ServiceAccount
+  name: hcu-device-plugin
+  namespace: '{{ .Release.Namespace }}'

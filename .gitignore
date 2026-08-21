@@ -1,0 +1,49 @@
+# Every dot-prefixed file and directory (.idea/, .claude/, .vscode/, .DS_Store, ...)
+.*
+# Exceptions: dot files the repository must keep
+!.gitignore
+!.gitattributes
+!.dockerignore
+!.helmignore
+
+# Build artifacts
+/hcu-label-node
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.test
+*.out
+vendor/
+
+# Coverage and profile files
+*.prof
+coverage.txt
+coverage.out
+coverage.html
+
+# Images and archives
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.zip
+*.rar
+*.7z
+*.img
+*.iso
+*.qcow2
+*.raw
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*~

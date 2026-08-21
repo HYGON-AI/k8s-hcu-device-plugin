@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hygon Information Technology Co., Ltd.
+
+hcuDevicePlugin:
+  hcuDpCntr:
+    containerSecurityContext:
+      privileged: true
+    env:
+      deviceSplitCount: "4"
+      logLevel: "2"
+      logSeverity: INFO
+      policy: "0"
+      pulse: "30"
+      resourceMultiple: "false"
+      resourceRegisterStrategy: hami
+      topologyRegister: "false"
+    image:
+      repository: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin
+      tag: v3.0.0
+  nodeSelector:
+    hcu: "on"
+kubernetesClusterDomain: cluster.local
