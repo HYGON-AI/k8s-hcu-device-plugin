@@ -25,6 +25,7 @@ Current version: **v3.0.0**
 - [Building](#building)
 - [Verification](#verification)
 - [License](#license)
+- [Third-Party Notices](#third-party-notices)
 
 ## Features
 
@@ -123,29 +124,30 @@ k8s-hcu-device-plugin/
 ├── Dockerfile                           # Runtime image (relies on /opt/hyhal mounted from the node)
 ├── go.mod / go.sum                      # Go module dependencies
 ├── LICENSE
+├── THIRD_PARTY_NOTICES.md               # Third-party notices (version / license / copyright / modifications)
 └── README.md
 ```
 
 ### Core Modules
 
-| Module | Responsibility |
-|--------|----------------|
+| Module | Responsibility                                                                                                                                        |
+|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cmd/main.go` | Parses CLI flags such as `--strategy`, initializes DCGM, and starts an independent device plugin instance per resource type according to the strategy |
-| `plugin/plugin.go` | Implements the kubelet device plugin gRPC interface: `ListAndWatch` reports the device list, `Allocate` attaches devices to containers |
-| `plugin/register.go` | In HAMi mode, watches Pod events, writes device registration annotations onto the node, and maintains the `hcu-topology-info` ConfigMap |
-| `util/hcu.go` | Discovers physical cards / vHCUs / MIG instances via [dcu-dcgm](https://github.com/HYGON-AI/dcu-dcgm) and generates `hygon.com/*` resource names |
-| `util/util.go` | Annotation encoding/decoding, node locking, and Pod allocation state management shared with [k8s-hcu-scheduler](../k8s-hcu-scheduler) |
-| `util/client` | In-cluster Kubernetes API access (in-cluster config preferred, falls back to kubeconfig) |
-| `log/log.go` | Project-wide logging entry point: wraps klog v2, implements `--log-severity` gating and bridges the settings to glog (pulled in by dpm) |
+| `plugin/plugin.go` | Implements the kubelet device plugin gRPC interface: `ListAndWatch` reports the device list, `Allocate` attaches devices to containers                |
+| `plugin/register.go` | In HAMi mode, watches Pod events, writes device registration annotations onto the node, and maintains the `hcu-topology-info` ConfigMap               |
+| `util/hcu.go` | Discovers physical cards / vHCUs / MIG instances via [hcu-dcgm](https://github.com/HYGON-AI/hcu-dcgm) and generates `hygon.com/*` resource names      |
+| `util/util.go` | Annotation encoding/decoding, node locking, and Pod allocation state management shared with [k8s-hcu-scheduler](../k8s-hcu-scheduler)                 |
+| `util/client` | In-cluster Kubernetes API access (in-cluster config preferred, falls back to kubeconfig)                                                              |
+| `log/log.go` | Project-wide logging entry point: wraps klog v2, implements `--log-severity` gating and bridges the settings to glog (pulled in by dpm)               |
 
 ### Runtime Dependencies
 
-| Dependency | Description |
-|------------|-------------|
-| [dcu-dcgm](https://github.com/HYGON-AI/dcu-dcgm) | Go module providing HCU device discovery, vHCU creation/destruction, and health checking |
-| [Project-HAMi/HAMi](https://github.com/Project-HAMi/HAMi) | Node locking and scheduling coordination utilities used in HAMi mode |
+| Dependency                                                                          | Description |
+|-------------------------------------------------------------------------------------|-------------|
+| [hcu-dcgm](https://github.com/HYGON-AI/hcu-dcgm)                                    | Go module providing HCU device discovery, vHCU creation/destruction, and health checking |
+| [Project-HAMi/HAMi](https://github.com/Project-HAMi/HAMi)                           | Node locking and scheduling coordination utilities used in HAMi mode |
 | [kubevirt/device-plugin-manager](https://github.com/kubevirt/device-plugin-manager) | Device plugin lifecycle management framework |
-| Node `/opt/hyhal` | Mounted via hostPath at runtime to provide the HCU low-level libraries (not baked into the image) |
+| Node `/opt/hyhal`                                                                   | Mounted via hostPath at runtime to provide the HCU low-level libraries (not baked into the image) |
 
 ## Prerequisites
 
@@ -520,3 +522,12 @@ kubectl logs -n kube-system -l name=hcu-dp-ds
 ## License
 
 Parts of this project are adapted from [HAMi](https://github.com/Project-HAMi/HAMi). Hygon's modifications and original contributions are released under the [Apache License 2.0](LICENSE).
+
+## Third-Party Notices
+
+Every third-party open source component pulled in via Go modules — repository, pinned version, license, local path, copyright notice, and HYGON modification status — is documented item by item in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), kept in sync with [go.mod](go.mod).
+
+- All dependencies use permissive licenses (Apache-2.0 / BSD-3-Clause / BSD-2-Clause / MIT / ISC). No copyleft licenses (GPL, LGPL, AGPL) are involved, so everything is compatible with this project's Apache License 2.0.
+- Apart from the HAMi-derived code noted under [License](#license), every third-party component is vendored as-is from upstream with no source modifications.
+- The authoritative license text for each dependency is the `LICENSE` / `NOTICE` file shipped in its distribution; run `go mod vendor` to inspect them under `vendor/`.
+- When adding or upgrading a dependency (changing `go.mod`), update the corresponding entry in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

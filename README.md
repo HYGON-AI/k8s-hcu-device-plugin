@@ -23,6 +23,7 @@ Hygon HCU Device Plugin 是一个 Kubernetes 设备插件（Device Plugin），�
 - [构建](#构建)
 - [验证](#验证)
 - [License](#license)
+- [第三方声明](#第三方声明)
 
 ## 功能特性
 
@@ -121,29 +122,30 @@ k8s-hcu-device-plugin/
 ├── Dockerfile                           # 运行时镜像（依赖节点挂载的 /opt/hyhal）
 ├── go.mod / go.sum                      # Go 模块依赖
 ├── LICENSE
+├── THIRD_PARTY_NOTICES.md               # 第三方开源组件声明（版本 / 许可证 / 版权 / 修改情况）
 └── README.md
 ```
 
 ### 核心模块说明
 
-| 模块 | 职责 |
-|------|------|
-| `cmd/main.go` | 解析 `--strategy` 等 CLI 参数，初始化 DCGM，按策略为每种资源类型启动独立的 Device Plugin 实例 |
-| `plugin/plugin.go` | 实现 Kubelet Device Plugin gRPC 接口：`ListAndWatch` 上报设备列表，`Allocate` 将设备挂载到容器 |
-| `plugin/register.go` | HAMi 模式下监听 Pod 事件、向节点写入设备注册注解、维护 `hcu-topology-info` ConfigMap |
-| `util/hcu.go` | 通过 [dcu-dcgm](https://github.com/HYGON-AI/dcu-dcgm) 发现物理卡 / vHCU / MIG 实例，生成 `hygon.com/*` 资源名 |
-| `util/util.go` | 与 [k8s-hcu-scheduler](../k8s-hcu-scheduler) 协作的注解编解码、节点锁、Pod 分配状态管理 |
-| `util/client` | 集群内 Kubernetes API 访问（InCluster 优先，回退 kubeconfig） |
-| `log/log.go` | 全工程统一日志入口：封装 klog v2，实现 `--log-severity` 等级门控与 glog（dpm 依赖）参数桥接 |
+| 模块 | 职责                                                                                             |
+|------|------------------------------------------------------------------------------------------------|
+| `cmd/main.go` | 解析 `--strategy` 等 CLI 参数，初始化 DCGM，按策略为每种资源类型启动独立的 Device Plugin 实例                             |
+| `plugin/plugin.go` | 实现 Kubelet Device Plugin gRPC 接口：`ListAndWatch` 上报设备列表，`Allocate` 将设备挂载到容器                     |
+| `plugin/register.go` | HAMi 模式下监听 Pod 事件、向节点写入设备注册注解、维护 `hcu-topology-info` ConfigMap                                 |
+| `util/hcu.go` | 通过 [hcu-dcgm](https://github.com/HYGON-AI/hcu-dcgm) 发现物理卡 / vHCU / MIG 实例，生成 `hygon.com/*` 资源名 |
+| `util/util.go` | 与 [k8s-hcu-scheduler](../k8s-hcu-scheduler) 协作的注解编解码、节点锁、Pod 分配状态管理                            |
+| `util/client` | 集群内 Kubernetes API 访问（InCluster 优先，回退 kubeconfig）                                              |
+| `log/log.go` | 全工程统一日志入口：封装 klog v2，实现 `--log-severity` 等级门控与 glog（dpm 依赖）参数桥接                                |
 
 ### 运行时依赖
 
-| 依赖 | 说明 |
-|------|------|
-| [dcu-dcgm](https://github.com/HYGON-AI/dcu-dcgm) | Go 模块，提供 HCU 设备发现、vHCU 创建/销毁、健康检查等能力 |
-| [Project-HAMi/HAMi](https://github.com/Project-HAMi/HAMi) | HAMi 模式下的节点锁与调度协作工具 |
+| 依赖                                                                                  | 说明 |
+|-------------------------------------------------------------------------------------|------|
+| [hcu-dcgm](https://github.com/HYGON-AI/hcu-dcgm)                                    | Go 模块，提供 HCU 设备发现、vHCU 创建/销毁、健康检查等能力 |
+| [Project-HAMi/HAMi](https://github.com/Project-HAMi/HAMi)                           | HAMi 模式下的节点锁与调度协作工具 |
 | [kubevirt/device-plugin-manager](https://github.com/kubevirt/device-plugin-manager) | Device Plugin 生命周期管理框架 |
-| 节点 `/opt/hyhal` | 运行时通过 hostPath 挂载，提供 HCU 底层库（镜像内不打包） |
+| 节点 `/opt/hyhal`                                                                     | 运行时通过 hostPath 挂载，提供 HCU 底层库（镜像内不打包） |
 
 ## 前置要求
 
@@ -517,3 +519,13 @@ kubectl logs -n kube-system -l name=hcu-dp-ds
 ## License
 
 本项目部分代码基于 [HAMi](https://github.com/Project-HAMi/HAMi) 改编，Hygon 的修改与原创贡献均采用 [Apache License 2.0](LICENSE)。
+
+## 第三方声明
+
+本项目通过 Go module 引入的全部第三方开源组件，其仓库地址、固定版本、许可证类型、本地路径、版权声明及 HYGON 修改情况，
+已逐项记录在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 中，依赖清单与 [go.mod](go.mod) 保持一致。
+
+- 所有依赖均为宽松型开源许可证（Apache-2.0 / BSD-3-Clause / BSD-2-Clause / MIT / ISC），不含 GPL、LGPL、AGPL 等 Copyleft 许可证，与本项目的 Apache License 2.0 兼容
+- 除 README [License](#license) 一节声明的 HAMi 改编代码外，其余第三方组件均按上游原样引入，未做源码修改
+- 依赖完整的许可证正文以各组件发行包内的 `LICENSE` / `NOTICE` 文件为准，执行 `go mod vendor` 后可在 `vendor/` 对应目录下查阅
+- 新增或升级依赖（修改 `go.mod`）时，须同步更新 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 中的对应条目

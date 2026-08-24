@@ -121,32 +121,60 @@ const RESOURCE_REGISTER_STRATEGY = "RESOURCE_REGISTER_STRATEGY"
 
 // GetCardAndRender get HCU render and card index from driver module
 func GetCardAndRender(pcieAddress string) ([]string, error) {
-	modules := []string{"amdgpu", "hydcu", "hycu"}
+	pattern := filepath.Join(
+		"/sys/module",
+		"*",
+		"drivers",
+		"pci:*",
+		pcieAddress,
+		"drm",
+	)
 
-	for _, module := range modules {
-		dirPath := filepath.Join("/sys/module", module, "drivers/pci:"+module, pcieAddress, "drm")
-		if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("glob pattern %s error: %w", pattern, err)
+	}
+
+	for _, dirPath := range matches {
+		// directory structure：
+		// /sys/module/<module>/drivers/pci:<driver>/<pcieAddress>/drm
+		rel, err := filepath.Rel("/sys/module", dirPath)
+		if err != nil {
 			continue
 		}
 
-		dir, err := os.Open(dirPath)
-		if err != nil {
-			log.Errorf("error open directory %s: %v", dirPath, err)
-			return nil, fmt.Errorf("error open directory %s: %v", dirPath, err)
+		parts := strings.Split(rel, string(filepath.Separator))
+		if len(parts) < 5 {
+			continue
 		}
-		defer dir.Close()
 
-		subDirs, err := dir.Readdirnames(-1)
+		moduleName := parts[0]
+		driverName := strings.TrimPrefix(parts[2], "pci:")
+
+		// The module and PCI driver names must be exactly the same.
+		if moduleName != driverName {
+			continue
+		}
+
+		entries, err := os.ReadDir(dirPath)
 		if err != nil {
 			log.Errorf("read directory %s error: %v", dirPath, err)
-			return nil, fmt.Errorf("read directory %s error: %v", dirPath, err)
+			return nil, fmt.Errorf("read directory %s error: %w", dirPath, err)
 		}
 
-		return subDirs, nil
+		result := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			result = append(result, entry.Name())
+		}
+
+		return result, nil
 	}
 
-	log.Error("no matching modules found (amdgpu, hydcu, hycu)")
-	return nil, fmt.Errorf("no matching modules found (amdgpu, hydcu, hycu)")
+	log.Errorf("no matching DRM device found for PCI address %s", pcieAddress)
+	return nil, fmt.Errorf(
+		"no matching DRM device found for PCI address %s",
+		pcieAddress,
+	)
 }
 
 // SimpleHealthCheck check HCU healthy by index
