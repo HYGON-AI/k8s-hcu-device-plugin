@@ -60,8 +60,8 @@ func hasIncompletePhysicalDevices() bool {
 	return false
 }
 
-// ReconcileDCGMDevices compares DCGM/DMI device counts with lspci;
-// if mismatched or DMI info is incomplete, shuts down and re-initializes DCGM via Init().
+// ReconcileDCGMDevices compares RSMI, DMI (DeviceCount), and lspci device counts;
+// if any side mismatches, shuts down and re-initializes DCGM via Init().
 func ReconcileDCGMDevices() {
 	dcgmReconcileMu.Lock()
 	defer dcgmReconcileMu.Unlock()
@@ -72,18 +72,24 @@ func ReconcileDCGMDevices() {
 		return
 	}
 
+	dmiCount, err := dcgm.DeviceCount()
+	if err != nil {
+		log.Errorf("DeviceCount failed: %v", err)
+		return
+	}
+
 	lspciCount, err := CountChengduDevicesByLspci()
 	if err != nil {
 		log.Errorf("CountChengduDevicesByLspci failed: %v", err)
 		return
 	}
 
-	log.V(3).Infof("DCGM  get  hcu  count ::: rsmi=%d       lspci=%d ", rsmiCount, lspciCount)
-	if rsmiCount == lspciCount {
+	log.V(3).Infof("DCGM get hcu count ::: rsmi=%d  dmi=%d  lspci=%d", rsmiCount, dmiCount, lspciCount)
+	if rsmiCount == dmiCount && dmiCount == lspciCount {
 		return
 	}
 
-	log.Warningf("DCGM out of sync (rsmi=%d  lspci=%d ), reinitializing", rsmiCount, lspciCount)
+	log.Warningf("DCGM out of sync (rsmi=%d dmi=%d lspci=%d), reinitializing", rsmiCount, dmiCount, lspciCount)
 	if err := dcgm.ShutDown(); err != nil {
 		log.Errorf("DCGM ShutDown failed: %v", err)
 	}
