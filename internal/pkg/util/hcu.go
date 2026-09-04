@@ -75,6 +75,13 @@ func ReconcileDCGMDevices() {
 	dmiCount, err := dcgm.DeviceCount()
 	if err != nil {
 		log.Errorf("DeviceCount failed: %v", err)
+		if err := dcgm.ShutDown(); err != nil {
+			log.Errorf("DCGM ShutDown failed: %v", err)
+		}
+		if err := dcgm.Init(); err != nil {
+			log.Errorf("DCGM Init failed: %v", err)
+			return
+		}
 		return
 	}
 
