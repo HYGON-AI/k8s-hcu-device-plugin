@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/HYGON-AI/k8s-hcu-device-plugin/internal/pkg/util"
 
@@ -23,6 +24,7 @@ import (
 	hmutil "github.com/Project-HAMi/HAMi/pkg/util"
 	"github.com/kubevirt/device-plugin-manager/pkg/dpm"
 	"golang.org/x/net/context"
+	corev1 "k8s.io/api/core/v1"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
@@ -411,18 +413,9 @@ func (p *DevicePlugin) AllocateHCUs(ctx context.Context, r *pluginapi.AllocateRe
 
 		for _, id := range req.DevicesIDs {
 			log.V(2).Infof("Allocating device Bus ID: %s", id)
-			cardAndRenderNames, err := util.GetCardAndRender(id)
-			if err != nil {
+			if err := appendDRIDevicesFromPCI(id, &car); err != nil {
 				log.Errorf("Device Card and Render Found Error by BUS id %s, Error:%v", id, err)
 				return &pluginapi.AllocateResponse{}, fmt.Errorf("device Card and Render Found Error by BUS id %s, Error:%v", id, err)
-			}
-			for _, devPath := range cardAndRenderNames {
-				devCardPath := "/dev/dri/" + devPath
-				devCard := new(pluginapi.DeviceSpec)
-				devCard.HostPath = devCardPath
-				devCard.ContainerPath = devCardPath
-				devCard.Permissions = "rw"
-				car.Devices = append(car.Devices, devCard)
 			}
 		}
 
@@ -453,27 +446,17 @@ func (p *DevicePlugin) AllocateVirtualHCUs(ctx context.Context, r *pluginapi.All
 				log.Errorf("Virtual HCU %s not found in mapper", id)
 				return &pluginapi.AllocateResponse{}, fmt.Errorf("virtual HCU %s not found in mapper", id)
 			}
-			cardAndRenderNames, err := util.GetCardAndRender(virtualHCU.PciBusNumber)
-			if err != nil {
+			if err := appendDRIDevicesFromPCI(virtualHCU.PciBusNumber, &car); err != nil {
 				log.Errorf("Device Card and Render Found Error by BUS id %s, Error:%v", virtualHCU.PciBusNumber, err)
 				return &pluginapi.AllocateResponse{}, fmt.Errorf("device Card and Render Found Error by BUS id %s, Error:%v", virtualHCU.PciBusNumber, err)
 			}
-			for _, devPath := range cardAndRenderNames {
-				devCardPath := "/dev/dri/" + devPath
-				devCard := new(pluginapi.DeviceSpec)
-				devCard.HostPath = devCardPath
-				devCard.ContainerPath = devCardPath
-				devCard.Permissions = "rw"
-				car.Devices = append(car.Devices, devCard)
-			}
 
-			mount := new(pluginapi.Mount)
 			hostpath := fmt.Sprintf("/etc/vdev/%s.conf", id)
 			containerpath := fmt.Sprintf("/etc/vdev/docker/%s.conf", id)
-			mount.HostPath = hostpath
-			mount.ContainerPath = containerpath
-			mount.ReadOnly = true
-			car.Mounts = append(car.Mounts, mount)
+			if err := mountVDeviceConf(&car, hostpath, containerpath); err != nil {
+				log.Errorf("Invalid vdev conf for %s: %v", id, err)
+				return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid vdev conf for %s: %w", id, err)
+			}
 		}
 
 		response.ContainerResponses = append(response.ContainerResponses, &car)
@@ -498,18 +481,9 @@ func (p *DevicePlugin) AllocateMigHCUs(ctx context.Context, r *pluginapi.Allocat
 			}
 			log.V(2).Infof("Allocating MIG device %s with physical device %s", id, migHCU.PciBusNumber)
 
-			cardAndRenderNames, err := util.GetCardAndRender(migHCU.PciBusNumber)
-			if err != nil {
+			if err := appendDRIDevicesFromPCI(migHCU.PciBusNumber, &car); err != nil {
 				log.Errorf("Device Card and Render Found Error by BUS id %s, Error:%v", migHCU.PciBusNumber, err)
 				return &pluginapi.AllocateResponse{}, fmt.Errorf("device Card and Render Found Error by BUS id %s, Error:%v", migHCU.PciBusNumber, err)
-			}
-			for _, devPath := range cardAndRenderNames {
-				devCardPath := "/dev/dri/" + devPath
-				devCard := new(pluginapi.DeviceSpec)
-				devCard.HostPath = devCardPath
-				devCard.ContainerPath = devCardPath
-				devCard.Permissions = "rw"
-				car.Devices = append(car.Devices, devCard)
 			}
 
 			migInstance, err := dcgm.MigInfoByUUID(id)
@@ -574,6 +548,113 @@ func addCommonDevicesAndMounts(car *pluginapi.ContainerAllocateResponse) {
 	addDeviceIfExists("/dev/mkfd", car)
 
 	addHyhalMount(car)
+}
+
+const (
+	pendingPodRetryTimes    = 5
+	pendingPodRetryInterval = 200 * time.Millisecond
+)
+
+// getPendingPodWithRetry briefly retries GetPendingPod to absorb the race between
+// the HAMi scheduler writing bind annotations and kubelet calling Allocate.
+func getPendingPodWithRetry(ctx context.Context, nodename string) (*corev1.Pod, error) {
+	var lastErr error
+	for attempt := 1; attempt <= pendingPodRetryTimes; attempt++ {
+		pod, err := hmutil.GetPendingPod(ctx, nodename)
+		if err == nil {
+			return pod, nil
+		}
+		lastErr = err
+		log.Warningf("GetPendingPod failed on node %s (attempt %d/%d): %v",
+			nodename, attempt, pendingPodRetryTimes, err)
+		if attempt == pendingPodRetryTimes {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("get pending pod canceled: %w", ctx.Err())
+		case <-time.After(pendingPodRetryInterval):
+		}
+	}
+	return nil, fmt.Errorf("get pending pod on node %s failed after %d retries: %w",
+		nodename, pendingPodRetryTimes, lastErr)
+}
+
+// appendDRIDevicesFromPCI looks up card/render nodes for the PCI bus and appends
+// them to the container allocate response. Partial success without any usable
+// /dev/dri device is treated as an error so kubelet will not start a broken pod.
+func appendDRIDevicesFromPCI(pciBus string, car *pluginapi.ContainerAllocateResponse) error {
+	cardAndRenderNames, err := util.GetCardAndRender(pciBus)
+	if err != nil {
+		return err
+	}
+	if len(cardAndRenderNames) == 0 {
+		return fmt.Errorf("no /dev/dri devices found for PCI address %s", pciBus)
+	}
+
+	added := 0
+	for _, devPath := range cardAndRenderNames {
+		devCardPath := "/dev/dri/" + devPath
+		if _, err := os.Stat(devCardPath); err != nil {
+			log.Warningf("skip missing dri path %s: %v", devCardPath, err)
+			continue
+		}
+		car.Devices = append(car.Devices, &pluginapi.DeviceSpec{
+			HostPath:      devCardPath,
+			ContainerPath: devCardPath,
+			Permissions:   "rw",
+		})
+		added++
+	}
+	if added == 0 {
+		return fmt.Errorf("no usable /dev/dri devices for PCI address %s", pciBus)
+	}
+	return nil
+}
+
+// validateVDeviceConf ensures the host vdev configuration file exists, is a
+// non-empty regular file, and contains printable text. Mounting a missing or
+// corrupt conf into the container causes runtime failures that surface as
+// abnormal pod status.
+func validateVDeviceConf(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("vdev conf %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("vdev conf %s is not a regular file", path)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("vdev conf %s is empty", path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read vdev conf %s: %w", path, err)
+	}
+	// Reject obviously corrupt content (NUL bytes / pure binary).
+	for _, b := range data {
+		if b == 0 {
+			return fmt.Errorf("vdev conf %s contains invalid binary content", path)
+		}
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return fmt.Errorf("vdev conf %s has no usable content", path)
+	}
+	return nil
+}
+
+// mountVDeviceConf validates then mounts a host vdev conf into the container.
+func mountVDeviceConf(car *pluginapi.ContainerAllocateResponse, hostPath, containerPath string) error {
+	if err := validateVDeviceConf(hostPath); err != nil {
+		return err
+	}
+	car.Mounts = append(car.Mounts, &pluginapi.Mount{
+		HostPath:      hostPath,
+		ContainerPath: containerPath,
+		ReadOnly:      true,
+	})
+	return nil
 }
 
 // addCommonRWMDevices adds /dev/kfd and /dev/mkfd with rwm permissions (used by HAMi and cores allocation).
@@ -667,14 +748,13 @@ func buildDevicesWithNUMAFromMigInfo(devices map[string]dcgm.MigInfo) []*plugina
 func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	responses := pluginapi.AllocateResponse{}
 	nodename := util.NodeName
-	current, err := hmutil.GetPendingPod(ctx, nodename)
+	current, err := getPendingPodWithRetry(ctx, nodename)
 	if err != nil {
-		car := pluginapi.ContainerAllocateResponse{}
-		addCommonRWMDevices(&car)
-		addHyhalMount(&car)
-
-		responses.ContainerResponses = append(responses.ContainerResponses, &car)
-		return &responses, nil
+		// Never report a partial success (kfd/mkfd/hyhal only, no /dev/dri).
+		// That leaves pods Running without mark files; RefreshContainerDevices
+		// then force-deletes them and recreates a ContainerStatusUnknown storm.
+		log.Errorf("AllocateHAMiHCUs aborted: %v", err)
+		return &pluginapi.AllocateResponse{}, err
 	}
 	log.V(2).Infof("Allocate for pod %s/%s uid [%s] \n", current.Namespace, current.Name, current.UID)
 
@@ -735,19 +815,10 @@ func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.All
 				return &pluginapi.AllocateResponse{}, fmt.Errorf("device serial number %s not found in mapper", devSerialNumber)
 			}
 
-			cardAndRenderNames, err := util.GetCardAndRender(deviceInfo.PciBusNumber)
-			if err != nil {
+			if err := appendDRIDevicesFromPCI(deviceInfo.PciBusNumber, &car); err != nil {
 				log.Errorf("Device Card and Render Found Error by BUS id %s, Error:%v", deviceInfo.PciBusNumber, err)
 				util.PodAllocationFailed(nodename, current, NodeLockHCU)
 				return &pluginapi.AllocateResponse{}, fmt.Errorf("device Card and Render Found Error by BUS id %s, Error:%v", deviceInfo.PciBusNumber, err)
-			}
-			for _, devPath := range cardAndRenderNames {
-				devCardPath := "/dev/dri/" + devPath
-				devCard := new(pluginapi.DeviceSpec)
-				devCard.HostPath = devCardPath
-				devCard.ContainerPath = devCardPath
-				devCard.Permissions = "rw"
-				car.Devices = append(car.Devices, devCard)
 			}
 
 			physicalDeviceInfo := deviceInfo
@@ -778,13 +849,20 @@ func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.All
 			markFile, err := p.CreateMarkFile(current, &current.Spec.Containers[ctrIndex], physicalDeviceInfo.DvInd, vIdx[0])
 			if err != nil {
 				log.Errorf("Create mark file for vHCU %d failed: %v", vIdx[0], err)
+				_ = dcgm.StopVDevice(vIdx[0])
+				_ = dcgm.DestroySingleVDevice(vIdx[0])
+				util.PodAllocationFailed(nodename, current, NodeLockHCU)
+				return &pluginapi.AllocateResponse{}, fmt.Errorf("create mark file for vHCU %d failed: %w", vIdx[0], err)
 			}
-			if len(markFile) > 0 {
-				car.Mounts = append(car.Mounts, &pluginapi.Mount{
-					ContainerPath: VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("docker/vdev%d.conf", vIdx[0]),
-					HostPath:      VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("vdev%d.conf", vIdx[0]),
-					ReadOnly:      true,
-				})
+			hostConf := VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("vdev%d.conf", vIdx[0])
+			containerConf := VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("docker/vdev%d.conf", vIdx[0])
+			if err := mountVDeviceConf(&car, hostConf, containerConf); err != nil {
+				log.Errorf("Invalid vdev conf for vHCU %d: %v", vIdx[0], err)
+				_ = os.Remove(markFile)
+				_ = dcgm.StopVDevice(vIdx[0])
+				_ = dcgm.DestroySingleVDevice(vIdx[0])
+				util.PodAllocationFailed(nodename, current, NodeLockHCU)
+				return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid vdev conf for vHCU %d: %w", vIdx[0], err)
 			}
 		}
 		responses.ContainerResponses = append(responses.ContainerResponses, &car)
