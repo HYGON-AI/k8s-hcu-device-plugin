@@ -179,6 +179,13 @@ func GetCardAndRender(pcieAddress string) ([]string, error) {
 		for _, entry := range entries {
 			result = append(result, entry.Name())
 		}
+		if len(result) == 0 {
+			log.Errorf("DRM directory %s is empty for PCI address %s", dirPath, pcieAddress)
+			return nil, fmt.Errorf(
+				"no /dev/dri devices under DRM path for PCI address %s",
+				pcieAddress,
+			)
+		}
 
 		return result, nil
 	}
