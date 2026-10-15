@@ -5,7 +5,7 @@ go 1.22.2
 toolchain go1.24.1
 
 require (
-	github.com/HYGON-AI/hcu-dcgm/v3 v3.0.0
+	github.com/HYGON-AI/hcu-dcgm/v3 v3.0.1
 	github.com/Project-HAMi/HAMi v0.0.0-20250125070959-ab547e40cc64
 	github.com/kubevirt/device-plugin-manager v1.19.5
 	github.com/urfave/cli/v2 v2.27.1
