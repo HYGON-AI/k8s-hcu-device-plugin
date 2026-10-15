@@ -7,9 +7,9 @@ set -euo pipefail
 IMAGE=harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin
 
 # Derive the version from the git tag so it never drifts from a hand-maintained constant.
-if ! VERSION=$(git describe --tags --dirty 2>/dev/null); then
+if ! VERSION=v3.0.1; then
     echo "ERROR: no git tag found, cannot determine the version." >&2
-    echo "       Create a tag first, e.g.: git tag v2.4.4" >&2
+    echo "       Create a tag first, e.g.: git tag v3.0.0" >&2
     exit 1
 fi
 echo "Building version: ${VERSION}"
