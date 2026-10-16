@@ -153,7 +153,7 @@ spec:
       args: [ "sleep infinity & wait" ]
       resources:
         limits:
-          hygon.com/ hcu-share-30c-16g: 1 # requesting a vHCU
+          hygon.com/hcu-share-30c-16g: 1 # requesting a vHCU
 ```
 
 k8s工作负载成功运行后，可以进入对应容器运行 hy-smi virtual --show-device-info 命令查看vHCU分配情况。
