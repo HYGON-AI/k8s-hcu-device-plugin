@@ -835,12 +835,20 @@ func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.All
 			util.PodAllocationFailed(nodename, current, NodeLockHCU)
 			return &pluginapi.AllocateResponse{}, fmt.Errorf("device %s not found in mapper", devreq[0].UUID)
 		}
-		log.V(3).Infoln("devreqs=", len(devreq), "usedmem=", devreq[0].Usedmem, ":", physicalDeviceInfo.MemoryTotal/1024/1024)
+		log.V(3).Infoln("devreqs=", len(devreq), "usedmem=", devreq[0].Usedmem, "usedcores=", devreq[0].Usedcores, ":", physicalDeviceInfo.MemoryTotal/1024/1024)
 		if len(devreq) < 2 && devreq[0].Usedmem < int32(physicalDeviceInfo.MemoryTotal/1024/1024) {
-			actualCores := int(math.Ceil(float64(devreq[0].Usedcores) * float64(physicalDeviceInfo.ComputeUnit) / 100.0))
-			if actualCores < 1 {
-				actualCores = 1
+			// Usedcores is a percentage (1-100). 0 means hcucores was omitted: create a
+			// memory-only vHCU that shares CUs with other vHCUs (hy-smi:
+			// --vdevice-compute-units 0 → cu_count: 0).
+			actualCores := 0
+			if devreq[0].Usedcores > 0 {
+				actualCores = int(math.Ceil(float64(devreq[0].Usedcores) * float64(physicalDeviceInfo.ComputeUnit) / 100.0))
+				if actualCores < 1 {
+					actualCores = 1
+				}
 			}
+			log.V(3).Infof("CreateVDevices dvInd=%d actualCores=%d usedmem=%d (usedcores%%=%d)",
+				physicalDeviceInfo.DvInd, actualCores, devreq[0].Usedmem, devreq[0].Usedcores)
 			vIdx, err := dcgm.CreateVDevices(physicalDeviceInfo.DvInd, 1, []int{actualCores}, []int{int(devreq[0].Usedmem)})
 			if err != nil {
 				util.PodAllocationFailed(nodename, current, NodeLockHCU)
