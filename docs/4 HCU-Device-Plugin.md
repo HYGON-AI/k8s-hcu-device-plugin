@@ -8,11 +8,11 @@ HCU-Device-Plugin提供三种工作模式：
 
 •通过资源名称区分物理 HCU 和不同规格的 vHCU，例如：
 
-hygon.com/hcu → 物理卡整卡调度
+`hygon.com/hcu` → 物理卡整卡调度
 
-hygon.com/hcu-share-40c-30g → 40个计算单元30G显存规格的 vHCU
+`hygon.com/hcu-share-40c-30g` → 40个计算单元30G显存规格的 vHCU
 
-hygon.com/hcu-share-20c-40g → 20个计算单元40G显存规格的 vHCU
+`hygon.com/hcu-share-20c-40g` → 20个计算单元40G显存规格的 vHCU
 
 •规则：存在预切分 vHCU的HCU卡不会参与整卡调度;存在 vHCU 的卡必须通过 vHCU 规格资源名称调度，避免混合调度带来的 OOM 问题。
 
@@ -30,11 +30,11 @@ HCU-Device-Plugin的三种工作模式，通过不同 YAML 文件部署，V2.3.0
 
 | RESOURCE_REGISTER_STRATEGY | 含义                                                         | 资源类型                            |
 | -------------------------- | ------------------------------------------------------------ | ----------------------------------- |
-| hcu                        | 仅管控HCU物理设备                                            | hygon.com/hcu                       |
-| vhcu                       | 仅管控预切分vHCU                                             | hygon.com/hcu-share-*               |
-| mixed（默认）              | 标准模式：物理设备与预切分vHCU协同管控；存在预切分 vHCU的HCU卡不会参与整卡调度。 | hygon.com/hcu hygon.com/hcu-share-* |
-| hami                       | 动态切分vHCU设备                                             | hygon.com/hcunum                    |
-| mig                        | mig虚拟化设备管控                                            | hygon.com/hcu-mig-*                 |
+| hcu                        | 仅管控HCU物理设备                                            | `hygon.com/hcu `                      |
+| vhcu                       | 仅管控预切分vHCU                                             | `hygon.com/hcu-share-*`               |
+| mixed（默认）              | 标准模式：物理设备与预切分vHCU协同管控；存在预切分 vHCU的HCU卡不会参与整卡调度。 | `hygon.com/hcu` `hygon.com/hcu-share-*` |
+| hami                       | 动态切分vHCU设备                                             | `hygon.com/hcunum`                    |
+| mig                        | mig虚拟化设备管控                                            | `hygon.com/hcu-mig-*`                 |
 
 ## 2.1 标准模式
 
@@ -66,13 +66,13 @@ hcu-device-plugin-97bwn               1/1     Running   1 (7d20h ago)   23d     
 hcu-device-plugin-pdps4               1/1     Running   0               23d     10.233.122.21     worker-183   <none>           <none>
 ```
 
-HCU-Device-Plugin向k8s集群注册的HCU资源名为hygon.com/hcu，用户可以通过查看HCU节点k8s资源详情确认HCU资源是否注册成功：
+HCU-Device-Plugin向k8s集群注册的HCU资源名为`hygon.com/hcu`，用户可以通过查看HCU节点k8s资源详情确认HCU资源是否注册成功：
 
 ```
 kubectl describe node <node-name>
 ```
 
-如下为一个HCU节点的资源注册实例，Capacity 字段中“hygon.com/hcu: 1”表示该节点有1块HCU整卡可用，"hygon.com/hcu-share-*c-*g"表示该节点有对应*c、*g的vHCU可用。
+如下为一个HCU节点的资源注册实例，Capacity 字段中“`hygon.com/hcu`: 1”表示该节点有1块HCU整卡可用，“`hygon.com/hcu-share-*c-*g`”表示该节点有对应*c、*g的vHCU可用。
 
 ```
 Capacity:
@@ -207,13 +207,13 @@ hcu-device-plugin-mig-6kfqg         1/1        Running    0    32s    10.233.64.
 hcu-device-plugin-mig-md6qz         1/1        Running    0    32s    16.233.65.77   worker1    <none>     <none>
 ```
 
-HCU-Device-Plugin向k8s集群注册的MIG模式HCU资源名为hygon.com/hcu-mig-*g-*gb用户可以通过查看HCU节点k8s资源详情确认HCU资源是否注册成功：
+HCU-Device-Plugin向k8s集群注册的MIG模式HCU资源名为`hygon.com/hcu-mig-*g-*gb`用户可以通过查看HCU节点k8s资源详情确认HCU资源是否注册成功：
 
 ```
 kubectl describe node  <node-name>
 ```
 
-如下为一个HCU节点的资源注册实例，Capacity 字段中“hygon.com/hcu-mig-2g-15gb: 1”表示该节点有一块对应规格的MIG设备。
+如下为一个HCU节点的资源注册实例，Capacity 字段中“`hygon.com/hcu-mig-2g-15gb`: 1”表示该节点有一块对应规格的MIG设备。
 
 ```
 Capacity:
