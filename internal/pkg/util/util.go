@@ -60,8 +60,6 @@ const (
 	HCUUseUUID         = "hygon.com/use-gpuuuid"
 	HCUNoUseUUID       = "hygon.com/nouse-gpuuuid"
 
-	IndexAnnos = "hygon.com/container-index"
-
 	mode = "hami"
 )
 
@@ -257,14 +255,15 @@ func DecodePodDevices(checklist map[string]string, annos map[string]string) (Pod
 		if !ok {
 			continue
 		}
-		pd[devID] = make(PodSingleDevice, 0)
-		for _, s := range strings.Split(str, OnePodMultiContainerSplitSymbol) {
+		// Keep empty middle segments so indexes stay aligned with
+		// InitContainers+Containers (flat index). Only drop the trailing
+		// empty part produced by EncodePodSingleDevice's final ';'.
+		segments := splitPodDeviceAnnotation(str)
+		pd[devID] = make(PodSingleDevice, 0, len(segments))
+		for _, s := range segments {
 			cd, err := DecodeContainerDevices(s)
 			if err != nil {
-				return PodDevices{}, nil
-			}
-			if len(cd) == 0 {
-				continue
+				return PodDevices{}, err
 			}
 			pd[devID] = append(pd[devID], cd)
 		}
@@ -285,10 +284,24 @@ func GetNextDeviceRequest(dtype string, p corev1.Pod) (corev1.Container, Contain
 	if !ok {
 		return corev1.Container{}, res, errors.New("device request not found")
 	}
+	// Segment indexes are only meaningful as flat container indexes when the
+	// scheduler encoded one segment per InitContainer+Container. A scheduler
+	// that only encodes Containers would silently shift every request onto an
+	// init container, so fail loudly instead of building a wrong mark file.
+	if want := len(p.Spec.InitContainers) + len(p.Spec.Containers); len(pd) != want {
+		return corev1.Container{}, res, fmt.Errorf(
+			"device annotation has %d segments, want %d (InitContainers+Containers)", len(pd), want)
+	}
 	for ctridx, ctrDevice := range pd {
-		if len(ctrDevice) > 0 {
-			return p.Spec.Containers[ctridx], ctrDevice, nil
+		if len(ctrDevice) == 0 {
+			continue
 		}
+		// ctridx is the original annotation segment index (= flat container index).
+		ctr, err := GetPodContainerByIndex(&p, ctridx)
+		if err != nil {
+			return corev1.Container{}, res, fmt.Errorf("device request at segment %d: %w", ctridx, err)
+		}
+		return *ctr, ctrDevice, nil
 	}
 	return corev1.Container{}, res, errors.New("device request not found")
 }
@@ -301,29 +314,37 @@ func GetContainerDeviceStrArray(c ContainerDevices) []string {
 	return tmp
 }
 
+// eraseFirstDeviceSegment blanks the first segment that still holds devices.
+// Segment positions and count are preserved, so the re-encoded annotation keeps
+// its InitContainers+Containers alignment for the next Allocate.
+func eraseFirstDeviceSegment(pd PodSingleDevice) PodSingleDevice {
+	res := make(PodSingleDevice, 0, len(pd))
+	found := false
+	for _, val := range pd {
+		if found {
+			res = append(res, val)
+			continue
+		}
+		if len(val) > 0 {
+			found = true
+			res = append(res, ContainerDevices{})
+			continue
+		}
+		res = append(res, val)
+	}
+	return res
+}
+
 func EraseNextDeviceTypeFromAnnotation(dtype string, p corev1.Pod) error {
 	pdevices, err := DecodePodDevices(InRequestDevices, p.Annotations)
 	if err != nil {
 		return err
 	}
-	res := PodSingleDevice{}
 	pd, ok := pdevices[dtype]
 	if !ok {
 		return errors.New("erase device annotation not found")
 	}
-	found := false
-	for _, val := range pd {
-		if found {
-			res = append(res, val)
-		} else {
-			if len(val) > 0 {
-				found = true
-				res = append(res, ContainerDevices{})
-			} else {
-				res = append(res, val)
-			}
-		}
-	}
+	res := eraseFirstDeviceSegment(pd)
 	log.V(3).Infoln("After erase res=", res)
 	newannos := make(map[string]string)
 	newannos[InRequestDevices[dtype]] = EncodePodSingleDevice(res)
@@ -479,73 +500,53 @@ func PodAllocationFailed(nodeName string, pod *corev1.Pod, lockname string) {
 	}
 }
 
-func UpdateContainerIndexAnnotations(pod *corev1.Pod) error {
-	containerIndex := ""
-	reqDeviceString := pod.Annotations[SupportDevices[HygonHCUDevice]]
-	allocteDevicesString := pod.Annotations[InRequestDevices[HygonHCUDevice]]
-
-	if reqDeviceString == allocteDevicesString {
-		reqDeviceArray := strings.Split(reqDeviceString, ";")
-		if len(reqDeviceArray) != len(pod.Spec.Containers) {
-			for i := 0; i < len(pod.Spec.Containers)-len(reqDeviceArray); i++ {
-				reqDeviceString = ";" + reqDeviceString
-			}
-			reqDeviceArray = strings.Split(reqDeviceString, ";")
-		}
-
-		for idx, val := range reqDeviceArray {
-			if len(val) > 0 {
-				containerIndex += strconv.Itoa(idx) + ","
-			}
-		}
+// splitPodDeviceAnnotation splits a pod-level device annotation into one segment
+// per container. EncodePodSingleDevice always appends a trailing ';', so the
+// final empty part is dropped to keep segment count aligned with containers.
+func splitPodDeviceAnnotation(anno string) []string {
+	if anno == "" {
+		return nil
 	}
-
-	if len(containerIndex) > 0 {
-		ann := make(map[string]string)
-		ann[IndexAnnos] = containerIndex
-		err := PatchPodAnnotations(pod, ann)
-		if err != nil {
-			return err
-		}
+	parts := strings.Split(anno, OnePodMultiContainerSplitSymbol)
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
 	}
-	return nil
+	return parts
 }
 
-func DeleteContainerIndexAnnotations(pod *corev1.Pod) error {
-	containerIndex := ""
-	indexString := pod.Annotations[IndexAnnos]
-	reqDeviceArray := ParseStringToArray(indexString, ",")
-	if len(reqDeviceArray) > 0 {
-		reqDeviceArray = reqDeviceArray[1:]
+// AllPodContainers returns InitContainers followed by Containers.
+// Device annotations use this flat order (same as kubelet creating init
+// containers before app containers).
+func AllPodContainers(pod *corev1.Pod) []corev1.Container {
+	if pod == nil {
+		return nil
 	}
-
-	for _, val := range reqDeviceArray {
-		containerIndex += val + ","
+	nInit := len(pod.Spec.InitContainers)
+	nApp := len(pod.Spec.Containers)
+	if nInit+nApp == 0 {
+		return nil
 	}
-
-	if len(containerIndex) > 0 {
-		ann := make(map[string]string)
-		ann[IndexAnnos] = containerIndex
-		err := PatchPodAnnotations(pod, ann)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	all := make([]corev1.Container, 0, nInit+nApp)
+	all = append(all, pod.Spec.InitContainers...)
+	all = append(all, pod.Spec.Containers...)
+	return all
 }
 
-func GetCurrentContainerIndex(pod *corev1.Pod) int {
-	index := -1
-	indexString := pod.Annotations[IndexAnnos]
-	reqDeviceArray := ParseStringToArray(indexString, ",")
-	if len(reqDeviceArray) > 0 {
-		idx, err := strconv.Atoi(reqDeviceArray[0])
-		index = idx
-		if err != nil {
-			return -1
-		}
+// GetPodContainerByIndex resolves a flat container index into the corresponding
+// InitContainer or Container. Index space is [0, len(Init)+len(Containers)).
+func GetPodContainerByIndex(pod *corev1.Pod, idx int) (*corev1.Container, error) {
+	if pod == nil {
+		return nil, fmt.Errorf("pod is nil")
 	}
-	return index
+	nInit := len(pod.Spec.InitContainers)
+	nApp := len(pod.Spec.Containers)
+	if idx < 0 || idx >= nInit+nApp {
+		return nil, fmt.Errorf("container index %d out of range [0, %d)", idx, nInit+nApp)
+	}
+	if idx < nInit {
+		return &pod.Spec.InitContainers[idx], nil
+	}
+	return &pod.Spec.Containers[idx-nInit], nil
 }
 
 func ParseStringToArray(input string, comma string) []string {
