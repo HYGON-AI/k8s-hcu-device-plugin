@@ -288,7 +288,7 @@ func GetAllPhysicalDevices() map[string]dcgm.DeviceInfo {
 }
 
 func RequestsHCU(pod *corev1.Pod) bool {
-	for _, container := range pod.Spec.Containers {
+	for _, container := range AllPodContainers(pod) {
 		for resourceName, quantity := range container.Resources.Limits {
 			if (strings.Contains(string(resourceName), "hygon.com")) && quantity.Value() > 0 {
 				return true
@@ -299,7 +299,9 @@ func RequestsHCU(pod *corev1.Pod) bool {
 }
 
 func RequestsVirtualHCU(pod *corev1.Pod) bool {
-	for _, container := range pod.Spec.Containers {
+	// InitContainers are included: an init container requesting HCU also gets a
+	// mark file, so it must be subject to the same "mark file missing" handling.
+	for _, container := range AllPodContainers(pod) {
 		for resourceName, quantity := range container.Resources.Limits {
 			if strings.Contains(string(resourceName), "hygon.com") && strings.Contains(string(resourceName), "hcumem") && quantity.Value() > 0 {
 				return true
