@@ -31,8 +31,9 @@ Current version: **v3.0.0**
 
 - **Physical HCU**: discovery, registration, health checking, and whole-card allocation
 - **Pre-partitioned vHCU**: registration, health checking, and scheduling of virtual HCU instances carved out in advance by an administrator
-- **Dynamically partitioned vHCU (HAMi mode)**: vHCUs are created on demand at Pod startup according to the requested compute/memory, and reclaimed automatically when the Pod exits
+- **Dynamically partitioned vHCU (HAMi mode)**: vHCUs are created on demand at Pod startup according to the requested compute/memory, and reclaimed automatically when the Pod exits; vHCU requests are supported in both `initContainers` and app containers
 - **Pre-partitioned MIG HCU**: registration, health checking, and scheduling of MIG instances
+- **Configurable resource prefix**: `RESOURCE_PREFIX` (`hcu` / `dcu`) for seamless upgrades from legacy DCU clusters (resource names, HAMi annotations, and device UUIDs)
 - **NUMA topology awareness**: reports each device's NUMA node to the kubelet
 - **Topology registration** (HAMi mode): writes the node's HCU interconnect topology into the `kube-system/hcu-topology-info` ConfigMap
 
@@ -198,6 +199,7 @@ The `--strategy` flag (or the `RESOURCE_REGISTER_STRATEGY` environment variable)
 |-----------------------------|---------|-------------|
 | `--strategy` / `RESOURCE_REGISTER_STRATEGY` | `mixed` | Resource registration strategy |
 | `--policy` / `POLICY` | `0` | Resource naming policy: `0` default naming, `1` device model, `2` model + memory + CU |
+| `--resource-prefix` / `RESOURCE_PREFIX` | `hcu` | Product-family prefix: `hcu` (default) or `dcu` (legacy DCU resource names / annotations / UUIDs) |
 | `--pulse` / `PULSE` | `30` | Device health check interval, in seconds |
 | `--node-name` / `NODE_NAME` | - | Name of the current node (injected via the Downward API at deploy time) |
 | `--topology-register` / `TOPOLOGY_REGISTER` | `true` | Whether to register the HCU topology into a ConfigMap in HAMi mode |
@@ -207,6 +209,17 @@ The `--strategy` flag (or the `RESOURCE_REGISTER_STRATEGY` environment variable)
 | `--log-severity` / `LOG_SEVERITY` | `INFO` | Minimum severity written to stderr: `INFO` / `WARNING` / `ERROR`. Setting `WARNING` drops Info and `V(n)` logs |
 
 > Logging is unified on klog. All output goes to stderr (never to disk) so the container runtime can collect it.
+
+### RESOURCE_PREFIX and Legacy DCU Compatibility
+
+| `RESOURCE_PREFIX` | Extended resources | HAMi device annotations | Device UUID |
+|-------------------|--------------------|-------------------------|-------------|
+| `hcu` (default) | `hygon.com/hcu`, `hcunum` / `hcucores` / `hcumem` | `hami.io/hcu-devices-*` | `HCU-<serial>` |
+| `dcu` | `hygon.com/dcu`, `dcunum` / `dcucores` / `dcumem` | `hami.io/dcu-devices-*` | `DCU-<serial>` |
+
+Set `RESOURCE_PREFIX=dcu` on both the device plugin and the scheduler when upgrading a legacy DCU cluster so existing Pod YAMLs keep working. Node labels (e.g. `hcu=on`) are independent of the resource prefix; keep DaemonSet affinity on the labels your cluster already uses.
+
+**Note**: the plugin and scheduler must use the same prefix; do not mix `hcu` and `dcu` during a rolling upgrade.
 
 ## Deployment
 
@@ -403,16 +416,25 @@ kubectl apply -f demo/pytorch-hcu-mig.yaml
 
 A Pod declares its HCU needs through three extended resources. The scheduler picks the physical card, and the device plugin creates the vHCU when the container starts:
 
-| Resource | Meaning | Accepted Values |
+| Resource (`RESOURCE_PREFIX=hcu`) | Meaning | Accepted Values |
 |----------|---------|-----------------|
 | `hygon.com/hcunum` | Number of HCU slots | Usually `1`; must be `1` whenever compute or memory is non-zero |
 | `hygon.com/hcucores` | Share of compute | 1–100, where `100` means exclusive use of the whole card's compute |
 | `hygon.com/hcumem` | Requested device memory | Measured in **MiB** (with the default `RESOURCE_MULTIPLE=false`) |
 
+> With `RESOURCE_PREFIX=dcu`, the corresponding names are `hygon.com/dcunum`, `dcucores`, and `dcumem`.
+
 > `hcunum` and `hcucores` are reported through the device plugin's ListAndWatch. Because `hcumem` is
 > counted in MiB, the total on an 8-card node exceeds the device count a single ListAndWatch response
 > can carry, so the plugin patches it directly into the node's `status.capacity` /
 > `status.allocatable` instead (which requires patch permission on `nodes/status`).
+
+**Limits and initContainers:**
+
+- At most one dynamic vHCU per container (including init containers)
+- vHCU requests in `initContainers` **are supported**; init and app containers are allocated in order, and the plugin maps dense HAMi device annotations onto the correct containers
+- A dynamic vHCU created for an init container is reclaimed when that init finishes, before the app container's vHCU is created (they do not run concurrently)
+- `kubectl describe node` Allocated resources follow Kubernetes rules: `max(sum of app containers, max of init containers)` — init and app requests are **not** summed; that is expected
 
 **Partial sharing example** (30% of compute, 8 GiB of memory):
 

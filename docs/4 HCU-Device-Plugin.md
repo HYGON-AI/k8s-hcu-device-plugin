@@ -28,13 +28,34 @@ HCU-Device-Plugin的三种工作模式，通过不同 YAML 文件部署，V2.3.0
 
 表 2.1 HCU-Device-Plugin 资源注册策略
 
-| RESOURCE_REGISTER_STRATEGY | 含义                                                         | 资源类型                            |
+| RESOURCE_REGISTER_STRATEGY | 含义                                                         | 资源类型（`RESOURCE_PREFIX=hcu`）                            |
 | -------------------------- | ------------------------------------------------------------ | ----------------------------------- |
 | hcu                        | 仅管控HCU物理设备                                            | `hygon.com/hcu `                      |
 | vhcu                       | 仅管控预切分vHCU                                             | `hygon.com/hcu-share-*`               |
 | mixed（默认）              | 标准模式：物理设备与预切分vHCU协同管控；存在预切分 vHCU的HCU卡不会参与整卡调度。 | `hygon.com/hcu` `hygon.com/hcu-share-*` |
 | hami                       | 动态切分vHCU设备                                             | `hygon.com/hcunum`                    |
 | mig                        | mig虚拟化设备管控                                            | `hygon.com/hcu-mig-*`                 |
+
+### 资源名前缀 RESOURCE_PREFIX
+
+环境变量 / 参数 `RESOURCE_PREFIX`（默认 `hcu`）用于兼容旧版 DCU 集群：
+
+| RESOURCE_PREFIX | 物理 / 共享 / MIG 示例 | HAMi 资源 | 设备 UUID | HAMi 注解 |
+|-----------------|------------------------|-----------|-----------|-----------|
+| `hcu`（默认） | `hygon.com/hcu`、`hcu-share-*`、`hcu-mig-*` | `hcunum` / `hcucores` / `hcumem` | `HCU-<serial>` | `hami.io/hcu-devices-*` |
+| `dcu` | `hygon.com/dcu`、`dcu-share-*`、`dcu-mig-*` | `dcunum` / `dcucores` / `dcumem` | `DCU-<serial>` | `hami.io/dcu-devices-*` |
+
+部署示例（旧版 DCU 集群）：
+
+```
+# 在 DaemonSet 环境变量中增加
+- name: RESOURCE_PREFIX
+  value: "dcu"
+```
+
+配套调度器需配置相同前缀。节点标签（如 `hcu=on`）与资源前缀无关，按集群原有亲和性配置即可。
+
+HAMi（`hami`）模式下还支持在 **initContainers** 中申请动态 vHCU，详见《Kubernetes集群HCU虚拟化》与《生态支持》文档中的说明。
 
 ## 2.1 标准模式
 

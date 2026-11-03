@@ -29,8 +29,9 @@ Hygon HCU Device Plugin 是一个 Kubernetes 设备插件（Device Plugin），�
 
 - **物理 HCU**：发现、注册、健康检查与整卡分配
 - **预切分 vHCU**：支持管理员预先划分的虚拟 HCU 实例的注册、健康检查与调度
-- **动态切分 vHCU（HAMi 模式）**：Pod 启动时按算力/显存需求动态创建 vHCU，Pod 退出后自动回收
+- **动态切分 vHCU（HAMi 模式）**：Pod 启动时按算力/显存需求动态创建 vHCU，Pod 退出后自动回收；支持在 `initContainers` 与业务容器中申请 vHCU
 - **预切分 MIG HCU**：支持 MIG 实例的注册、健康检查与调度
+- **资源名前缀可配置**：通过 `RESOURCE_PREFIX`（`hcu` / `dcu`）兼容旧版 DCU 集群的资源名、HAMi 注解与设备 UUID
 - **NUMA 拓扑感知**：向 Kubelet 上报设备的 NUMA 节点信息
 - **拓扑信息注册**（HAMi 模式）：将节点 HCU 互联拓扑写入 `kube-system/hcu-topology-info` ConfigMap
 
@@ -207,7 +208,16 @@ k8s-hcu-device-plugin/
 
 > 日志统一使用 klog，全部输出到 stderr（不落盘），由容器运行时统一收集。
 
-> **旧版 DCU 集群升级**：将 `RESOURCE_PREFIX=dcu`，则注册为 `hygon.com/dcu`、`dcunum`/`dcucores`/`dcumem`，注解为 `hami.io/dcu-devices-*`，设备 UUID 为 `DCU-<serial>`。调度器需使用相同前缀；节点标签（如 `hygon.com/hcu=true`）与资源名前缀解耦，仍按原集群标签配置亲和性即可。
+### RESOURCE_PREFIX 与旧版 DCU 兼容
+
+| `RESOURCE_PREFIX` | 扩展资源示例 | HAMi 设备注解 | 设备 UUID |
+|-------------------|--------------|---------------|-----------|
+| `hcu`（默认） | `hygon.com/hcu`、`hcunum` / `hcucores` / `hcumem` | `hami.io/hcu-devices-*` | `HCU-<serial>` |
+| `dcu` | `hygon.com/dcu`、`dcunum` / `dcucores` / `dcumem` | `hami.io/dcu-devices-*` | `DCU-<serial>` |
+
+旧版 DCU 集群升级时，将 Device Plugin（及配套调度器）的 `RESOURCE_PREFIX` 设为 `dcu` 即可保持原有 YAML 中的资源名与 UUID 前缀不变。节点标签（如 `hcu=on` / `hygon.com/hcu=true`）与资源名前缀解耦，DaemonSet 亲和性仍按原集群标签配置。
+
+**注意**：plugin 与 scheduler 必须使用相同前缀；同一集群滚动升级时不要混用 `hcu` / `dcu`。
 
 ## 部署
 
@@ -404,15 +414,24 @@ kubectl apply -f demo/pytorch-hcu-mig.yaml
 
 Pod 通过三个扩展资源声明 HCU 需求，由 Scheduler 选择物理卡，Device Plugin 在容器启动时动态创建 vHCU：
 
-| 资源 | 含义 | 取值说明 |
+| 资源（`RESOURCE_PREFIX=hcu`） | 含义 | 取值说明 |
 |------|------|----------|
 | `hygon.com/hcunum` | HCU 槽位数 | 通常为 `1`；当算力或显存非零时，只能为 `1` |
 | `hygon.com/hcucores` | 算力占比 | 1–100，`100` 表示独占整卡算力 |
 | `hygon.com/hcumem` | 显存申请量 | 单位为 **MiB**（默认 `RESOURCE_MULTIPLE=false`） |
 
+> 若 `RESOURCE_PREFIX=dcu`，上表资源名对应为 `hygon.com/dcunum`、`dcucores`、`dcumem`。
+
 > `hcunum`、`hcucores` 通过 Device Plugin 的 ListAndWatch 上报；`hcumem` 因为按 MiB 计数，
 > 8 卡节点的总量会超出 Device Plugin 单次上报的设备数量上限，改为由插件直接 patch 到
 > Node 的 `status.capacity` / `status.allocatable`（需要 `nodes/status` 的 patch 权限）。
+
+**使用限制与 initContainers：**
+
+- 每个 container（含 initContainer）最多申请 1 张动态 vHCU
+- **支持**在 `initContainers` 中申请 vHCU；init 与业务容器按顺序分别 Allocate，plugin 会将 HAMi 稠密设备注解对齐到对应容器
+- 同一物理卡上，init 阶段创建的动态 vHCU 在 init 结束后回收，再为业务容器创建（二者不会同时占用）
+- `kubectl describe node` 的 Allocated 资源按 Kubernetes 规则取 `max(业务容器合计, init 容器最大值)`，**不会**把 init 与业务资源相加，这是正常行为
 
 **部分共享示例**（申请 30% 算力、8 GB 显存）：
 
