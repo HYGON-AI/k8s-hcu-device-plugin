@@ -9,6 +9,7 @@ hcuDevicePluginMig:
       logLevel: "2"
       logSeverity: INFO
       pulse: "30"
+      resourcePrefix: hcu
       resourceRegisterStrategy: mig
     image:
       repository: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin

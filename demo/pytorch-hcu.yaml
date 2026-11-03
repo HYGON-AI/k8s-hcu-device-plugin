@@ -9,8 +9,25 @@ spec:
   containers:
     - name: hcu-pytorch-demo
       image: harbor.sourcefind.cn:5443/hcu/admin/base/pytorch:2.1.0-ubuntu22.04-dtk24.04.2-py3.10
-      command: [ "/bin/bash", "-c", "--" ]
-      args: [ "sleep infinity & wait" ]
+      command: ["/bin/bash", "-lc"]
+      args:
+        - |
+          exec python3 - <<'PY'
+          import torch
+
+          device = torch.device("cuda:0")
+          print("Using:", torch.cuda.get_device_name(0), flush=True)
+          n = 4096
+          a = torch.randn((n, n), device=device, dtype=torch.float16)
+          b = torch.randn((n, n), device=device, dtype=torch.float16)
+          count = 0
+          while True:
+              c = torch.mm(a, b)
+              torch.cuda.synchronize()
+              count += 1
+              if count % 10 == 0:
+                  print(f"completed {count} matmuls", flush=True)
+          PY
       resources:
         limits:
           hygon.com/hcu: 1 # requesting a HCU

@@ -24,7 +24,7 @@ spec:
         - key: CriticalAddonsOnly
           operator: Exists
       containers:
-        - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.0
+        - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.1
           name: hcu-dp-cntr
           securityContext:
             privileged: true
@@ -37,6 +37,8 @@ spec:
               value: "INFO"
             - name: "LOG_LEVEL"
               value: "2"
+            - name: "RESOURCE_PREFIX"
+              value: "hcu"
             - name: "NODE_NAME"
               valueFrom:
                 fieldRef:
