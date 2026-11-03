@@ -13,7 +13,7 @@ kubectl label nodes <node-name> hcu=on
 
 详细安装部署方法参考《HCU-Device-Plugin组件vHCU动态切分模式安装部署》
 
-HCU-Device-Plugin向k8s集群注册的vHCU资源名默认为`hygon.com/hcunum`（当环境变量`RESOURCE_PREFIX=dcu`时为`hygon.com/dcunum`）。用户可以通过查看HCU节点k8s资源详情确认vHCU资源是否注册成功：
+HCU-Device-Plugin向k8s集群注册的vHCU资源名默认为`hygon.com/hcunum`（当环境变量`RESOURCE_PREFIX=*cu`时为`hygon.com/*cunum`）。用户可以通过查看HCU节点k8s资源详情确认vHCU资源是否注册成功：
 
 ```
 kubectl describe node <node-name>
@@ -72,7 +72,7 @@ vhcu-scheduler-plugin-85c77b87d4-2vlxm     1/1     Running   0               12d
 - 每个 container（含 initContainer）最多可以申请一张动态 vHCU
 - **支持**在 `initContainers` 中申请 vHCU；init 与业务容器按启动顺序分别分配，动态 vHCU 在对应容器结束后回收
 - 节点 `Allocated` 资源按 Kubernetes 规则统计（`max(业务容器合计, init 最大值)`），不会把 init 与业务资源简单相加
-- 若需兼容旧版 DCU 资源名，部署 Device Plugin / 调度器时设置 `RESOURCE_PREFIX=dcu`，工作负载中使用 `hygon.com/dcunum`、`dcucores`、`dcumem`，设备 UUID 注解使用 `DCU-<serial>` 前缀
+- 若需兼容旧版 *CU 资源名，部署 Device Plugin / 调度器时设置 `RESOURCE_PREFIX=*cu`，工作负载中使用 `hygon.com/*cunum`、`*cucores`、`*cumem`，设备 UUID 注解使用 `*CU-<serial>` 前缀
 
 ### 2.2.1 指定算力与显存申请vHCU
 

@@ -33,7 +33,7 @@ Current version: **v3.0.0**
 - **Pre-partitioned vHCU**: registration, health checking, and scheduling of virtual HCU instances carved out in advance by an administrator
 - **Dynamically partitioned vHCU (HAMi mode)**: vHCUs are created on demand at Pod startup according to the requested compute/memory, and reclaimed automatically when the Pod exits; vHCU requests are supported in both `initContainers` and app containers
 - **Pre-partitioned MIG HCU**: registration, health checking, and scheduling of MIG instances
-- **Configurable resource prefix**: `RESOURCE_PREFIX` (`hcu` / `dcu`) for seamless upgrades from legacy DCU clusters (resource names, HAMi annotations, and device UUIDs)
+- **Configurable resource prefix**: `RESOURCE_PREFIX` (`hcu` / `*cu`) for seamless upgrades from legacy *CU clusters (resource names, HAMi annotations, and device UUIDs)
 - **NUMA topology awareness**: reports each device's NUMA node to the kubelet
 - **Topology registration** (HAMi mode): writes the node's HCU interconnect topology into the `kube-system/hcu-topology-info` ConfigMap
 
@@ -195,31 +195,31 @@ The `--strategy` flag (or the `RESOURCE_REGISTER_STRATEGY` environment variable)
 
 ## Configuration
 
-| Flag / Environment Variable | Default | Description |
-|-----------------------------|---------|-------------|
-| `--strategy` / `RESOURCE_REGISTER_STRATEGY` | `mixed` | Resource registration strategy |
-| `--policy` / `POLICY` | `0` | Resource naming policy: `0` default naming, `1` device model, `2` model + memory + CU |
-| `--resource-prefix` / `RESOURCE_PREFIX` | `hcu` | Product-family prefix: `hcu` (default) or `dcu` (legacy DCU resource names / annotations / UUIDs) |
-| `--pulse` / `PULSE` | `30` | Device health check interval, in seconds |
-| `--node-name` / `NODE_NAME` | - | Name of the current node (injected via the Downward API at deploy time) |
-| `--topology-register` / `TOPOLOGY_REGISTER` | `true` | Whether to register the HCU topology into a ConfigMap in HAMi mode |
-| `--resource-multiple` / `RESOURCE_MULTIPLE` | `false` | Whether to additionally register the `hcucores` and `hcumem` resources with the kubelet in HAMi mode |
-| `--device-split-count` / `DEVICE_SPLIT_COUNT` | `4` | Maximum number of vHCUs a single physical HCU can be split into in HAMi mode (must be greater than 0) |
-| `--log-level` / `LOG_LEVEL` | `2` | Verbosity level (0-10) controlling the granularity of `V(n)` logs |
+| Flag / Environment Variable | Default | Description                                                                                                    |
+|-----------------------------|---------|----------------------------------------------------------------------------------------------------------------|
+| `--strategy` / `RESOURCE_REGISTER_STRATEGY` | `mixed` | Resource registration strategy                                                                                 |
+| `--policy` / `POLICY` | `0` | Resource naming policy: `0` default naming, `1` device model, `2` model + memory + CU                          |
+| `--resource-prefix` / `RESOURCE_PREFIX` | `hcu` | Product-family prefix: `hcu` (default) or `*cu` (legacy *CU resource names / annotations / UUIDs)              |
+| `--pulse` / `PULSE` | `30` | Device health check interval, in seconds                                                                       |
+| `--node-name` / `NODE_NAME` | - | Name of the current node (injected via the Downward API at deploy time)                                        |
+| `--topology-register` / `TOPOLOGY_REGISTER` | `true` | Whether to register the HCU topology into a ConfigMap in HAMi mode                                             |
+| `--resource-multiple` / `RESOURCE_MULTIPLE` | `false` | Whether to additionally register the `hcucores` and `hcumem` resources with the kubelet in HAMi mode           |
+| `--device-split-count` / `DEVICE_SPLIT_COUNT` | `4` | Maximum number of vHCUs a single physical HCU can be split into in HAMi mode (must be greater than 0)          |
+| `--log-level` / `LOG_LEVEL` | `2` | Verbosity level (0-10) controlling the granularity of `V(n)` logs                                              |
 | `--log-severity` / `LOG_SEVERITY` | `INFO` | Minimum severity written to stderr: `INFO` / `WARNING` / `ERROR`. Setting `WARNING` drops Info and `V(n)` logs |
 
 > Logging is unified on klog. All output goes to stderr (never to disk) so the container runtime can collect it.
 
-### RESOURCE_PREFIX and Legacy DCU Compatibility
+### RESOURCE_PREFIX and Legacy *CU Compatibility
 
-| `RESOURCE_PREFIX` | Extended resources | HAMi device annotations | Device UUID |
-|-------------------|--------------------|-------------------------|-------------|
-| `hcu` (default) | `hygon.com/hcu`, `hcunum` / `hcucores` / `hcumem` | `hami.io/hcu-devices-*` | `HCU-<serial>` |
-| `dcu` | `hygon.com/dcu`, `dcunum` / `dcucores` / `dcumem` | `hami.io/dcu-devices-*` | `DCU-<serial>` |
+| `RESOURCE_PREFIX` | Extended resources                                | HAMi device annotations | Device UUID    |
+|-------------------|---------------------------------------------------|-------------------------|----------------|
+| `hcu` (default)   | `hygon.com/hcu`, `hcunum` / `hcucores` / `hcumem` | `hami.io/hcu-devices-*` | `HCU-<serial>` |
+| `*cu`             | `hygon.com/*cu`, `*cunum` / `*cucores` / `*cumem` | `hami.io/*cu-devices-*` | `*CU-<serial>` |
 
-Set `RESOURCE_PREFIX=dcu` on both the device plugin and the scheduler when upgrading a legacy DCU cluster so existing Pod YAMLs keep working. Node labels (e.g. `hcu=on`) are independent of the resource prefix; keep DaemonSet affinity on the labels your cluster already uses.
+Set `RESOURCE_PREFIX=*cu` on both the device plugin and the scheduler when upgrading a legacy *CU cluster so existing Pod YAMLs keep working. Node labels (e.g. `hcu=on`) are independent of the resource prefix; keep DaemonSet affinity on the labels your cluster already uses.
 
-**Note**: the plugin and scheduler must use the same prefix; do not mix `hcu` and `dcu` during a rolling upgrade.
+**Note**: the plugin and scheduler must use the same prefix; do not mix `hcu` and `*cu` during a rolling upgrade.
 
 ## Deployment
 
@@ -422,7 +422,7 @@ A Pod declares its HCU needs through three extended resources. The scheduler pic
 | `hygon.com/hcucores` | Share of compute | 1–100, where `100` means exclusive use of the whole card's compute |
 | `hygon.com/hcumem` | Requested device memory | Measured in **MiB** (with the default `RESOURCE_MULTIPLE=false`) |
 
-> With `RESOURCE_PREFIX=dcu`, the corresponding names are `hygon.com/dcunum`, `dcucores`, and `dcumem`.
+> With `RESOURCE_PREFIX=*cu`, the corresponding names are `hygon.com/*cunum`, `*cucores`, and `*cumem`.
 
 > `hcunum` and `hcucores` are reported through the device plugin's ListAndWatch. Because `hcumem` is
 > counted in MiB, the total on an 8-card node exceeds the device count a single ListAndWatch response

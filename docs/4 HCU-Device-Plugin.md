@@ -38,19 +38,19 @@ HCU-Device-Plugin的三种工作模式，通过不同 YAML 文件部署，V2.3.0
 
 ### 资源名前缀 RESOURCE_PREFIX
 
-环境变量 / 参数 `RESOURCE_PREFIX`（默认 `hcu`）用于兼容旧版 DCU 集群：
+环境变量 / 参数 `RESOURCE_PREFIX`（默认 `hcu`）用于兼容旧版 *CU 集群：
 
-| RESOURCE_PREFIX | 物理 / 共享 / MIG 示例 | HAMi 资源 | 设备 UUID | HAMi 注解 |
-|-----------------|------------------------|-----------|-----------|-----------|
-| `hcu`（默认） | `hygon.com/hcu`、`hcu-share-*`、`hcu-mig-*` | `hcunum` / `hcucores` / `hcumem` | `HCU-<serial>` | `hami.io/hcu-devices-*` |
-| `dcu` | `hygon.com/dcu`、`dcu-share-*`、`dcu-mig-*` | `dcunum` / `dcucores` / `dcumem` | `DCU-<serial>` | `hami.io/dcu-devices-*` |
+| RESOURCE_PREFIX | 物理 / 共享 / MIG 示例                      | HAMi 资源                        | 设备 UUID      | HAMi 注解               |
+|-----------------|---------------------------------------------|----------------------------------|----------------|-------------------------|
+| `hcu`（默认）   | `hygon.com/hcu`、`hcu-share-*`、`hcu-mig-*` | `hcunum` / `hcucores` / `hcumem` | `HCU-<serial>` | `hami.io/hcu-devices-*` |
+| `*cu`           | `hygon.com/*cu`、`*cu-share-*`、`*cu-mig-*` | `*cunum` / `*cucores` / `*cumem` | `*CU-<serial>` | `hami.io/*cu-devices-*` |
 
-部署示例（旧版 DCU 集群）：
+部署示例（旧版 *CU 集群）：
 
 ```
 # 在 DaemonSet 环境变量中增加
 - name: RESOURCE_PREFIX
-  value: "dcu"
+  value: "*cu"
 ```
 
 配套调度器需配置相同前缀。节点标签（如 `hcu=on`）与资源前缀无关，按集群原有亲和性配置即可。

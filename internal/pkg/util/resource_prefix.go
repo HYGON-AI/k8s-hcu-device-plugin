@@ -16,27 +16,27 @@ const (
 	DefaultResourcePrefix = "hcu"
 )
 
-// resourcePrefix is the lowercase product-family prefix (hcu|dcu).
+// resourcePrefix is the lowercase product-family prefix (hcu|*cu).
 // Mutated only by InitResourcePrefix at process start.
 var resourcePrefix = DefaultResourcePrefix
 
 // HandshakeAnnosString / RegisterAnnos / HygonRegisterAnnos are node annotation
-// keys. They are vars so InitResourcePrefix can rebuild them for dcu compat.
+// keys. They are vars so InitResourcePrefix can rebuild them for *cu compat.
 var (
 	HandshakeAnnosString = "hami.io/node-handshake-hcu"
 	RegisterAnnos        = "hami.io/node-hcu-register"
 	HygonRegisterAnnos   = "hygon.com/node-hcu-register"
 )
 
-// InitResourcePrefix validates and applies RESOURCE_PREFIX (hcu|dcu).
+// InitResourcePrefix validates and applies RESOURCE_PREFIX (hcu|*cu).
 // Must be called once at startup before device plugins register resources.
 func InitResourcePrefix(prefix string) error {
 	prefix = strings.ToLower(strings.TrimSpace(prefix))
 	if prefix == "" {
 		prefix = DefaultResourcePrefix
 	}
-	if prefix != "hcu" && prefix != "dcu" {
-		return fmt.Errorf("invalid resource-prefix %q, want hcu or dcu", prefix)
+	if !strings.Contains(prefix, "cu") {
+		return fmt.Errorf("invalid resource-prefix %q, want hcu or *cu", prefix)
 	}
 	resourcePrefix = prefix
 	applyResourcePrefix(prefix)
@@ -62,32 +62,32 @@ func applyResourcePrefix(prefix string) {
 	HandshakeAnnos[HygonHCUDevice] = HandshakeAnnosString
 }
 
-// ResourcePrefix returns the lowercase product-family prefix (hcu|dcu).
+// ResourcePrefix returns the lowercase product-family prefix (hcu|*cu).
 func ResourcePrefix() string {
 	return resourcePrefix
 }
 
-// DeviceIDPrefix returns the uppercase UUID prefix (HCU|DCU).
+// DeviceIDPrefix returns the uppercase UUID prefix (HCU|*CU).
 func DeviceIDPrefix() string {
 	return strings.ToUpper(resourcePrefix)
 }
 
-// ResourceNameNum returns hcunum / dcunum.
+// ResourceNameNum returns hcunum / *cunum.
 func ResourceNameNum() string {
 	return resourcePrefix + "num"
 }
 
-// ResourceNameCores returns hcucores / dcucores.
+// ResourceNameCores returns hcucores / *cucores.
 func ResourceNameCores() string {
 	return resourcePrefix + "cores"
 }
 
-// ResourceNameMem returns hcumem / dcumem.
+// ResourceNameMem returns hcumem / *cumem.
 func ResourceNameMem() string {
 	return resourcePrefix + "mem"
 }
 
-// FormatDeviceUUID builds PREFIX-<serial> (e.g. HCU-xxx / DCU-xxx).
+// FormatDeviceUUID builds PREFIX-<serial> (e.g. HCU-xxx / *CU-xxx).
 func FormatDeviceUUID(serial string) string {
 	return DeviceIDPrefix() + "-" + serial
 }

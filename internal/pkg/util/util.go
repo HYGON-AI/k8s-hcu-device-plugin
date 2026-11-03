@@ -70,7 +70,7 @@ func init() {
 	InRequestDevices = make(map[string]string)
 	SupportDevices = make(map[string]string)
 	HandshakeAnnos = make(map[string]string)
-	// Default to hcu; cmd/main may call InitResourcePrefix("dcu") at startup.
+	// Default to hcu; cmd/main may call InitResourcePrefix("*cu") at startup.
 	applyResourcePrefix(DefaultResourcePrefix)
 }
 
@@ -519,7 +519,7 @@ func PodAllocationTrySuccess(nodeName string, devName string, lockName string, p
 	}
 	annos := refreshed.Annotations[InRequestDevices[devName]]
 	log.V(3).Infoln("TrySuccess:", annos)
-	// Remaining device UUIDs look like HCU-<serial> / DCU-<serial>.
+	// Remaining device UUIDs look like HCU-<serial> / *CU-<serial>.
 	if strings.Contains(annos, DeviceIDPrefix()) {
 		return
 	}

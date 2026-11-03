@@ -12,31 +12,31 @@ func TestInitResourcePrefix(t *testing.T) {
 		_ = InitResourcePrefix(DefaultResourcePrefix)
 	})
 
-	if err := InitResourcePrefix("dcu"); err != nil {
-		t.Fatalf("InitResourcePrefix(dcu): %v", err)
+	if err := InitResourcePrefix("*cu"); err != nil {
+		t.Fatalf("InitResourcePrefix(*cu): %v", err)
 	}
-	if ResourcePrefix() != "dcu" {
+	if ResourcePrefix() != "*cu" {
 		t.Fatalf("ResourcePrefix=%q", ResourcePrefix())
 	}
-	if DeviceIDPrefix() != "DCU" {
+	if DeviceIDPrefix() != "*CU" {
 		t.Fatalf("DeviceIDPrefix=%q", DeviceIDPrefix())
 	}
-	if ResourceNameNum() != "dcunum" || ResourceNameCores() != "dcucores" || ResourceNameMem() != "dcumem" {
+	if ResourceNameNum() != "*cunum" || ResourceNameCores() != "*cucores" || ResourceNameMem() != "*cumem" {
 		t.Fatalf("resource names: %s %s %s", ResourceNameNum(), ResourceNameCores(), ResourceNameMem())
 	}
-	if FormatDeviceUUID("ABC") != "DCU-ABC" {
+	if FormatDeviceUUID("ABC") != "*CU-ABC" {
 		t.Fatalf("FormatDeviceUUID=%q", FormatDeviceUUID("ABC"))
 	}
-	if InRequestDevices[HygonHCUDevice] != "hami.io/dcu-devices-to-allocate" {
+	if InRequestDevices[HygonHCUDevice] != "hami.io/*cu-devices-to-allocate" {
 		t.Fatalf("InRequestDevices=%q", InRequestDevices[HygonHCUDevice])
 	}
-	if SupportDevices[HygonHCUDevice] != "hami.io/dcu-devices-allocated" {
+	if SupportDevices[HygonHCUDevice] != "hami.io/*cu-devices-allocated" {
 		t.Fatalf("SupportDevices=%q", SupportDevices[HygonHCUDevice])
 	}
-	if HandshakeAnnosString != "hami.io/node-handshake-dcu" {
+	if HandshakeAnnosString != "hami.io/node-handshake-*cu" {
 		t.Fatalf("HandshakeAnnosString=%q", HandshakeAnnosString)
 	}
-	if RegisterAnnos != "hami.io/node-dcu-register" || HygonRegisterAnnos != "hygon.com/node-dcu-register" {
+	if RegisterAnnos != "hami.io/node-*cu-register" || HygonRegisterAnnos != "hygon.com/node-*cu-register" {
 		t.Fatalf("register annos: %s %s", RegisterAnnos, HygonRegisterAnnos)
 	}
 
@@ -56,12 +56,12 @@ func TestGetHAMiResourceNameUsesPrefix(t *testing.T) {
 	t.Cleanup(func() {
 		_ = InitResourcePrefix(DefaultResourcePrefix)
 	})
-	_ = InitResourcePrefix("dcu")
+	_ = InitResourcePrefix("*cu")
 	// policy 0 does not call DCGM for the name itself when returning ResourceNameNum.
-	if got := GetHAMiResourceName("0"); got != "dcunum" {
-		t.Fatalf("GetHAMiResourceName(0)=%q, want dcunum", got)
+	if got := GetHAMiResourceName("0"); got != "*cunum" {
+		t.Fatalf("GetHAMiResourceName(0)=%q, want *cunum", got)
 	}
-	if got := GetResourceNamePrefix("0"); got != "dcu" {
-		t.Fatalf("GetResourceNamePrefix(0)=%q, want dcu", got)
+	if got := GetResourceNamePrefix("0"); got != "*cu" {
+		t.Fatalf("GetResourceNamePrefix(0)=%q, want *cu", got)
 	}
 }

@@ -133,14 +133,14 @@ func start() {
 		}
 
 	} else if resourceRegisterStrategy == "hami" {
-		// Run hygon.com/hcunum (or dcunum) Device Plugin
+		// Run hygon.com/hcunum (or *cunum) Device Plugin
 		go startDevicePlugin([]string{util.GetHAMiResourceName(policy)})
 
 		if resource_mutiple {
 			hamiBase := util.GetHAMiResourceName(policy)
-			// Run hygon.com/hcucores (or dcucores) Device Plugin
+			// Run hygon.com/hcucores (or *cucores) Device Plugin
 			go startDevicePlugin([]string{strings.ReplaceAll(hamiBase, util.ResourceNameNum(), util.ResourceNameCores())})
-			// Report hygon.com/hcumem (or dcumem) via node status patch instead of a Device Plugin,
+			// Report hygon.com/hcumem (or *cumem) via node status patch instead of a Device Plugin,
 			// because the MiB-denominated total exceeds the device plugin list limit.
 			go startHCUMemReporter(util.ResourceNamespace + "/" + strings.ReplaceAll(hamiBase, util.ResourceNameNum(), util.ResourceNameMem()))
 		}
@@ -255,7 +255,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:        "resource-prefix",
-			Usage:       "product-family prefix for K8s resource names, HAMi annotations and device UUIDs:\n\t\t[hcu | dcu], default hcu; set dcu for seamless upgrade from legacy DCU clusters",
+			Usage:       "product-family prefix for K8s resource names, HAMi annotations and device UUIDs:\n\t\t[hcu | *cu], default hcu; set *cu for seamless upgrade from legacy *CU clusters",
 			Value:       util.DefaultResourcePrefix,
 			Destination: &resourcePrefix,
 			EnvVars:     []string{"RESOURCE_PREFIX"},

@@ -31,7 +31,7 @@ Hygon HCU Device Plugin 是一个 Kubernetes 设备插件（Device Plugin），�
 - **预切分 vHCU**：支持管理员预先划分的虚拟 HCU 实例的注册、健康检查与调度
 - **动态切分 vHCU（HAMi 模式）**：Pod 启动时按算力/显存需求动态创建 vHCU，Pod 退出后自动回收；支持在 `initContainers` 与业务容器中申请 vHCU
 - **预切分 MIG HCU**：支持 MIG 实例的注册、健康检查与调度
-- **资源名前缀可配置**：通过 `RESOURCE_PREFIX`（`hcu` / `dcu`）兼容旧版 DCU 集群的资源名、HAMi 注解与设备 UUID
+- **资源名前缀可配置**：通过 `RESOURCE_PREFIX`（`hcu` / `*cu`）兼容旧版 *CU 集群的资源名、HAMi 注解与设备 UUID
 - **NUMA 拓扑感知**：向 Kubelet 上报设备的 NUMA 节点信息
 - **拓扑信息注册**（HAMi 模式）：将节点 HCU 互联拓扑写入 `kube-system/hcu-topology-info` ConfigMap
 
@@ -193,31 +193,31 @@ k8s-hcu-device-plugin/
 
 ## 配置参数
 
-| 参数 / 环境变量 | 默认值 | 说明 |
-|----------------|--------|------|
-| `--strategy` / `RESOURCE_REGISTER_STRATEGY` | `mixed` | 资源注册策略 |
-| `--policy` / `POLICY` | `0` | 资源命名策略：`0` 默认命名；`1` 使用设备型号；`2` 型号+显存+CU |
-| `--resource-prefix` / `RESOURCE_PREFIX` | `hcu` | 产品族前缀：`hcu`（默认）或 `dcu`（兼容旧版 DCU 集群资源名 / 注解 / UUID） |
-| `--pulse` / `PULSE` | `30` | 设备健康检查间隔（秒） |
-| `--node-name` / `NODE_NAME` | - | 当前节点名称（部署时通过 Downward API 注入） |
-| `--topology-register` / `TOPOLOGY_REGISTER` | `true` | HAMi 模式下是否注册 HCU 拓扑到 ConfigMap |
-| `--resource-multiple` / `RESOURCE_MULTIPLE` | `false` | HAMi 模式下是否额外向 Kubelet 注册 `hcucores` 和 `hcumem` 资源 |
-| `--device-split-count` / `DEVICE_SPLIT_COUNT` | `4` | HAMi 模式下单张物理 HCU 最多可切分的 vHCU 数量（须大于 0） |
-| `--log-level` / `LOG_LEVEL` | `2` | 详细日志级别（0-10），控制 `V(n)` 日志的输出粒度 |
+| 参数 / 环境变量 | 默认值 | 说明                                                                                        |
+|----------------|--------|---------------------------------------------------------------------------------------------|
+| `--strategy` / `RESOURCE_REGISTER_STRATEGY` | `mixed` | 资源注册策略                                                                                |
+| `--policy` / `POLICY` | `0` | 资源命名策略：`0` 默认命名；`1` 使用设备型号；`2` 型号+显存+CU                              |
+| `--resource-prefix` / `RESOURCE_PREFIX` | `hcu` | 产品族前缀：`hcu`（默认）或 `*cu`（兼容旧版 *CU 集群资源名 / 注解 / UUID）                  |
+| `--pulse` / `PULSE` | `30` | 设备健康检查间隔（秒）                                                                      |
+| `--node-name` / `NODE_NAME` | - | 当前节点名称（部署时通过 Downward API 注入）                                                |
+| `--topology-register` / `TOPOLOGY_REGISTER` | `true` | HAMi 模式下是否注册 HCU 拓扑到 ConfigMap                                                    |
+| `--resource-multiple` / `RESOURCE_MULTIPLE` | `false` | HAMi 模式下是否额外向 Kubelet 注册 `hcucores` 和 `hcumem` 资源                              |
+| `--device-split-count` / `DEVICE_SPLIT_COUNT` | `4` | HAMi 模式下单张物理 HCU 最多可切分的 vHCU 数量（须大于 0）                                  |
+| `--log-level` / `LOG_LEVEL` | `2` | 详细日志级别（0-10），控制 `V(n)` 日志的输出粒度                                            |
 | `--log-severity` / `LOG_SEVERITY` | `INFO` | 日志输出的最低等级：`INFO` / `WARNING` / `ERROR`。设为 `WARNING` 时丢弃 Info 与 `V(n)` 日志 |
 
 > 日志统一使用 klog，全部输出到 stderr（不落盘），由容器运行时统一收集。
 
-### RESOURCE_PREFIX 与旧版 DCU 兼容
+### RESOURCE_PREFIX 与旧版 *CU 兼容
 
-| `RESOURCE_PREFIX` | 扩展资源示例 | HAMi 设备注解 | 设备 UUID |
-|-------------------|--------------|---------------|-----------|
-| `hcu`（默认） | `hygon.com/hcu`、`hcunum` / `hcucores` / `hcumem` | `hami.io/hcu-devices-*` | `HCU-<serial>` |
-| `dcu` | `hygon.com/dcu`、`dcunum` / `dcucores` / `dcumem` | `hami.io/dcu-devices-*` | `DCU-<serial>` |
+| `RESOURCE_PREFIX` | 扩展资源示例                                      | HAMi 设备注解           | 设备 UUID      |
+|-------------------|---------------------------------------------------|-------------------------|----------------|
+| `hcu`（默认）     | `hygon.com/hcu`、`hcunum` / `hcucores` / `hcumem` | `hami.io/hcu-devices-*` | `HCU-<serial>` |
+| `*cu`             | `hygon.com/*cu`、`*cunum` / `*cucores` / `*cumem` | `hami.io/*cu-devices-*` | `*CU-<serial>` |
 
-旧版 DCU 集群升级时，将 Device Plugin（及配套调度器）的 `RESOURCE_PREFIX` 设为 `dcu` 即可保持原有 YAML 中的资源名与 UUID 前缀不变。节点标签（如 `hcu=on` / `hygon.com/hcu=true`）与资源名前缀解耦，DaemonSet 亲和性仍按原集群标签配置。
+旧版 *CU 集群升级时，将 Device Plugin（及配套调度器）的 `RESOURCE_PREFIX` 设为 `*cu` 即可保持原有 YAML 中的资源名与 UUID 前缀不变。节点标签（如 `hcu=on` / `hygon.com/hcu=true`）与资源名前缀解耦，DaemonSet 亲和性仍按原集群标签配置。
 
-**注意**：plugin 与 scheduler 必须使用相同前缀；同一集群滚动升级时不要混用 `hcu` / `dcu`。
+**注意**：plugin 与 scheduler 必须使用相同前缀；同一集群滚动升级时不要混用 `hcu` / `*cu`。
 
 ## 部署
 
@@ -420,7 +420,7 @@ Pod 通过三个扩展资源声明 HCU 需求，由 Scheduler 选择物理卡，
 | `hygon.com/hcucores` | 算力占比 | 1–100，`100` 表示独占整卡算力 |
 | `hygon.com/hcumem` | 显存申请量 | 单位为 **MiB**（默认 `RESOURCE_MULTIPLE=false`） |
 
-> 若 `RESOURCE_PREFIX=dcu`，上表资源名对应为 `hygon.com/dcunum`、`dcucores`、`dcumem`。
+> 若 `RESOURCE_PREFIX=*cu`，上表资源名对应为 `hygon.com/*cunum`、`*cucores`、`*cumem`。
 
 > `hcunum`、`hcucores` 通过 Device Plugin 的 ListAndWatch 上报；`hcumem` 因为按 MiB 计数，
 > 8 卡节点的总量会超出 Device Plugin 单次上报的设备数量上限，改为由插件直接 patch 到

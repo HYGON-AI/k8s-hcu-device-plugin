@@ -1,12 +1,12 @@
 
 
-### 1. 旧版 DCU 集群升级后资源名不兼容怎么办？
+### 1. 旧版 *CU 集群升级后资源名不兼容怎么办？
 
-将 Device Plugin（以及配套调度器）的环境变量 `RESOURCE_PREFIX` 设为 `dcu`：
+将 Device Plugin（以及配套调度器）的环境变量 `RESOURCE_PREFIX` 设为 `*cu`：
 
-- 扩展资源：`hygon.com/dcunum`、`dcucores`、`dcumem`（以及 `hygon.com/dcu` 等）
-- HAMi 注解：`hami.io/dcu-devices-to-allocate` / `dcu-devices-allocated`
-- 设备 UUID：`DCU-<serial>`
+- 扩展资源：`hygon.com/*cunum`、`*cucores`、`*cumem`（以及 `hygon.com/*cu` 等）
+- HAMi 注解：`hami.io/*cu-devices-to-allocate` / `*cu-devices-allocated`
+- 设备 UUID：`*CU-<serial>`
 
 保持与旧 YAML 一致。plugin 与 scheduler 前缀必须相同；节点标签亲和性与资源前缀无关，可继续使用原有 `hcu=on` 等标签。
 
@@ -16,7 +16,7 @@
 
 `max(业务容器资源合计, 各 init 容器资源的最大值)`，
 
-不会把 init 与业务简单相加。若要确认 init 是否真正拿到设备，请查看 Pod 注解（如 `hami.io/hcu-devices-allocated` 或 `dcu-devices-allocated`）以及 device-plugin 日志。
+不会把 init 与业务简单相加。若要确认 init 是否真正拿到设备，请查看 Pod 注解（如 `hami.io/hcu-devices-allocated` 或 `*cu-devices-allocated`）以及 device-plugin 日志。
 
 ### 3. 多容器 Pod（含 init）报错 `device annotation has N segments, want M`？
 
@@ -24,7 +24,7 @@
 
 1. 已升级到包含该修复的 device-plugin 版本  
 2. 注解中设备段数量与「声明了 hygon.com 设备资源的容器数」一致  
-3. `RESOURCE_PREFIX` 与调度器写入的注解前缀（`hcu`/`dcu`）一致  
+3. `RESOURCE_PREFIX` 与调度器写入的注解前缀（`hcu`/`*cu`）一致  
 
 ### 4. 容器中直接运行hy-smi报错，运行结果出现"N/A"或"RSMI_NOT_SUPPORTED"报错
 
