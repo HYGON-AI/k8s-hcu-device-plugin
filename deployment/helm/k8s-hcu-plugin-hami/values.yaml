@@ -12,6 +12,7 @@ hcuDevicePlugin:
       policy: "0"
       pulse: "30"
       resourceMultiple: "false"
+      resourcePrefix: hcu
       resourceRegisterStrategy: hami
       topologyRegister: "false"
     image:

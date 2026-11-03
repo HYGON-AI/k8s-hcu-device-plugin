@@ -196,6 +196,7 @@ k8s-hcu-device-plugin/
 |----------------|--------|------|
 | `--strategy` / `RESOURCE_REGISTER_STRATEGY` | `mixed` | 资源注册策略 |
 | `--policy` / `POLICY` | `0` | 资源命名策略：`0` 默认命名；`1` 使用设备型号；`2` 型号+显存+CU |
+| `--resource-prefix` / `RESOURCE_PREFIX` | `hcu` | 产品族前缀：`hcu`（默认）或 `dcu`（兼容旧版 DCU 集群资源名 / 注解 / UUID） |
 | `--pulse` / `PULSE` | `30` | 设备健康检查间隔（秒） |
 | `--node-name` / `NODE_NAME` | - | 当前节点名称（部署时通过 Downward API 注入） |
 | `--topology-register` / `TOPOLOGY_REGISTER` | `true` | HAMi 模式下是否注册 HCU 拓扑到 ConfigMap |
@@ -205,6 +206,8 @@ k8s-hcu-device-plugin/
 | `--log-severity` / `LOG_SEVERITY` | `INFO` | 日志输出的最低等级：`INFO` / `WARNING` / `ERROR`。设为 `WARNING` 时丢弃 Info 与 `V(n)` 日志 |
 
 > 日志统一使用 klog，全部输出到 stderr（不落盘），由容器运行时统一收集。
+
+> **旧版 DCU 集群升级**：将 `RESOURCE_PREFIX=dcu`，则注册为 `hygon.com/dcu`、`dcunum`/`dcucores`/`dcumem`，注解为 `hami.io/dcu-devices-*`，设备 UUID 为 `DCU-<serial>`。调度器需使用相同前缀；节点标签（如 `hygon.com/hcu=true`）与资源名前缀解耦，仍按原集群标签配置亲和性即可。
 
 ## 部署
 

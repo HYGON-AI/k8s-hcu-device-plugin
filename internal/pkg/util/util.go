@@ -48,9 +48,6 @@ const (
 	// OnePodMultiContainerSplitSymbol this is when one pod having multi container and more than one container use device, use ; symbol to join device info.
 	OnePodMultiContainerSplitSymbol = ";"
 
-	HandshakeAnnosString = "hami.io/node-handshake-hcu"
-	RegisterAnnos        = "hami.io/node-hcu-register"
-	HygonRegisterAnnos   = "hygon.com/node-hcu-register"
 	// ResourceNamespace is the vendor prefix for all resources exposed by this plugin.
 	ResourceNamespace  = "hygon.com"
 	HygonHCUDevice     = "HCU"
@@ -73,9 +70,8 @@ func init() {
 	InRequestDevices = make(map[string]string)
 	SupportDevices = make(map[string]string)
 	HandshakeAnnos = make(map[string]string)
-	InRequestDevices[HygonHCUDevice] = "hami.io/hcu-devices-to-allocate"
-	SupportDevices[HygonHCUDevice] = "hami.io/hcu-devices-allocated"
-	HandshakeAnnos[HygonHCUDevice] = HandshakeAnnosString
+	// Default to hcu; cmd/main may call InitResourcePrefix("dcu") at startup.
+	applyResourcePrefix(DefaultResourcePrefix)
 }
 
 func GetNode(nodename string) (*corev1.Node, error) {
@@ -272,6 +268,60 @@ func DecodePodDevices(checklist map[string]string, annos map[string]string) (Pod
 	return pd, nil
 }
 
+func containerRequestsHygonResource(c corev1.Container) bool {
+	for resourceName, quantity := range c.Resources.Limits {
+		if strings.Contains(string(resourceName), "hygon.com") && quantity.Value() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// expandPodDeviceSegments aligns decoded annotation segments with the pod's
+// flat container list (InitContainers then Containers).
+//
+// HAMi commonly writes a dense annotation with one segment per container that
+// requested devices (e.g. 2 segments for 2 GPU containers in a 4-container
+// pod). When segment count already equals len(Init)+len(Containers), segments
+// are treated as positional. Otherwise non-empty segments are paired in order
+// with containers that request hygon.com resources.
+func expandPodDeviceSegments(pd PodSingleDevice, pod *corev1.Pod) (PodSingleDevice, error) {
+	all := AllPodContainers(pod)
+	n := len(all)
+	if n == 0 {
+		return nil, fmt.Errorf("pod has no containers")
+	}
+	if len(pd) == n {
+		return pd, nil
+	}
+
+	nonEmpty := make([]ContainerDevices, 0, len(pd))
+	for _, seg := range pd {
+		if len(seg) > 0 {
+			nonEmpty = append(nonEmpty, seg)
+		}
+	}
+
+	requesting := make([]int, 0, n)
+	for i := range all {
+		if containerRequestsHygonResource(all[i]) {
+			requesting = append(requesting, i)
+		}
+	}
+
+	if len(nonEmpty) != len(requesting) {
+		return nil, fmt.Errorf(
+			"device annotation has %d device segment(s) for %d container(s) requesting hygon.com resources (pod has %d containers total, annotation segments=%d); cannot align",
+			len(nonEmpty), len(requesting), n, len(pd))
+	}
+
+	out := make(PodSingleDevice, n)
+	for i, flatIdx := range requesting {
+		out[flatIdx] = nonEmpty[i]
+	}
+	return out, nil
+}
+
 func GetNextDeviceRequest(dtype string, p corev1.Pod) (corev1.Container, ContainerDevices, error) {
 	pdevices, err := DecodePodDevices(InRequestDevices, p.Annotations)
 	if err != nil {
@@ -284,19 +334,15 @@ func GetNextDeviceRequest(dtype string, p corev1.Pod) (corev1.Container, Contain
 	if !ok {
 		return corev1.Container{}, res, errors.New("device request not found")
 	}
-	// Segment indexes are only meaningful as flat container indexes when the
-	// scheduler encoded one segment per InitContainer+Container. A scheduler
-	// that only encodes Containers would silently shift every request onto an
-	// init container, so fail loudly instead of building a wrong mark file.
-	if want := len(p.Spec.InitContainers) + len(p.Spec.Containers); len(pd) != want {
-		return corev1.Container{}, res, fmt.Errorf(
-			"device annotation has %d segments, want %d (InitContainers+Containers)", len(pd), want)
+	pd, err = expandPodDeviceSegments(pd, &p)
+	if err != nil {
+		return corev1.Container{}, res, err
 	}
 	for ctridx, ctrDevice := range pd {
 		if len(ctrDevice) == 0 {
 			continue
 		}
-		// ctridx is the original annotation segment index (= flat container index).
+		// ctridx is the flat container index (InitContainers then Containers).
 		ctr, err := GetPodContainerByIndex(&p, ctridx)
 		if err != nil {
 			return corev1.Container{}, res, fmt.Errorf("device request at segment %d: %w", ctridx, err)
@@ -343,6 +389,12 @@ func EraseNextDeviceTypeFromAnnotation(dtype string, p corev1.Pod) error {
 	pd, ok := pdevices[dtype]
 	if !ok {
 		return errors.New("erase device annotation not found")
+	}
+	// Expand dense HAMi annotations to a full Init+App layout before erase so
+	// the patched annotation keeps positional slots for later Allocate calls.
+	pd, err = expandPodDeviceSegments(pd, &p)
+	if err != nil {
+		return err
 	}
 	res := eraseFirstDeviceSegment(pd)
 	log.V(3).Infoln("After erase res=", res)
@@ -467,7 +519,8 @@ func PodAllocationTrySuccess(nodeName string, devName string, lockName string, p
 	}
 	annos := refreshed.Annotations[InRequestDevices[devName]]
 	log.V(3).Infoln("TrySuccess:", annos)
-	if strings.Contains(annos, HygonHCUDevice) {
+	// Remaining device UUIDs look like HCU-<serial> / DCU-<serial>.
+	if strings.Contains(annos, DeviceIDPrefix()) {
 		return
 	}
 	log.V(3).Infoln("AllDevicesAllocateSuccess releasing lock")

@@ -303,7 +303,7 @@ func RequestsVirtualHCU(pod *corev1.Pod) bool {
 	// mark file, so it must be subject to the same "mark file missing" handling.
 	for _, container := range AllPodContainers(pod) {
 		for resourceName, quantity := range container.Resources.Limits {
-			if strings.Contains(string(resourceName), "hygon.com") && strings.Contains(string(resourceName), "hcumem") && quantity.Value() > 0 {
+			if strings.Contains(string(resourceName), "hygon.com") && strings.Contains(string(resourceName), ResourceNameMem()) && quantity.Value() > 0 {
 				return true
 			}
 		}
@@ -326,7 +326,7 @@ func GetResourceNamePrefix(policy string) string {
 		mem_string := strconv.Itoa(int(math.Round(float64(info.GlobalMemSize)/(1024*1024*1024)))) + "G"
 		return strings.ReplaceAll(info.Name, "_", "-") + "_" + mem_string + "_" + cu_string
 	}
-	return "hcu"
+	return ResourcePrefix()
 }
 
 func GetHAMiResourceName(policy string) string {
@@ -335,14 +335,15 @@ func GetHAMiResourceName(policy string) string {
 		log.Errorf("Get device info err: %v", err)
 	}
 
+	num := ResourceNameNum()
 	if policy == "1" {
-		return info.Name + "_hcunum"
+		return info.Name + "_" + num
 	}
 
 	if policy == "2" {
 		cu_string := strconv.Itoa(info.ComputeUnitCount) + "CU"
 		mem_string := strconv.Itoa(int(math.Round(float64(info.GlobalMemSize)/(1024*1024*1024)))) + "G"
-		return strings.ReplaceAll(info.Name, "_", "-") + "_" + mem_string + "_" + cu_string + "_hcunum"
+		return strings.ReplaceAll(info.Name, "_", "-") + "_" + mem_string + "_" + cu_string + "_" + num
 	}
-	return "hcunum"
+	return num
 }

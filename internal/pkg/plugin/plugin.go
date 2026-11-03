@@ -179,10 +179,10 @@ func (p *DevicePlugin) ListAndWatch(e *pluginapi.Empty, s pluginapi.DevicePlugin
 		return p.ListAndWatchMigHCUs(e, s)
 	}
 
-	if strings.Contains(p.Resource, "hcunum") {
+	if strings.Contains(p.Resource, util.ResourceNameNum()) {
 		return p.ListAndWatchHAMiHCUs(e, s)
 	}
-	if strings.Contains(p.Resource, "hcucores") {
+	if strings.Contains(p.Resource, util.ResourceNameCores()) {
 		return p.ListAndWatchHCUCores(e, s)
 	}
 	return nil
@@ -321,7 +321,7 @@ func (p *DevicePlugin) ListAndWatchHAMiHCUs(e *pluginapi.Empty, s pluginapi.Devi
 	allHAMiHCUs := make(map[string]dcgm.DeviceInfo, len(allPhysicalDevices)*DeviceSplitCount)
 	for _, physicalDevice := range allPhysicalDevices {
 		for idx := 0; idx < DeviceSplitCount; idx++ {
-			allHAMiHCUs["HCU-"+physicalDevice.DeviceId+"-fake-"+strconv.Itoa(idx)] = physicalDevice
+			allHAMiHCUs[util.FormatDeviceUUID(physicalDevice.DeviceId)+"-fake-"+strconv.Itoa(idx)] = physicalDevice
 		}
 	}
 	p.setHAMiHCUs(allHAMiHCUs)
@@ -392,11 +392,11 @@ func (p *DevicePlugin) Allocate(ctx context.Context, r *pluginapi.AllocateReques
 		return p.AllocateMigHCUs(ctx, r)
 	}
 
-	if strings.Contains(p.Resource, "hcunum") {
+	if strings.Contains(p.Resource, util.ResourceNameNum()) {
 		return p.AllocateHAMiHCUs(ctx, r)
 	}
 
-	if strings.Contains(p.Resource, "hcucores") {
+	if strings.Contains(p.Resource, util.ResourceNameCores()) {
 		return p.AllocateCores(ctx, r)
 	}
 
@@ -795,7 +795,7 @@ func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.All
 	for _, val := range devreq {
 		log.Infof("Allocating device Serial Number: %s", val.UUID)
 		var devSerialNumber string
-		succeedCount, err := fmt.Sscanf(val.UUID, "HCU-%s", &devSerialNumber)
+		succeedCount, err := fmt.Sscanf(val.UUID, util.DeviceUUIDScanFormat(), &devSerialNumber)
 		if err != nil || succeedCount == 0 || devSerialNumber == "" {
 			log.Errorf("Invalid request device uuid: %s", val.UUID)
 			util.PodAllocationFailed(nodename, current, NodeLockHCU)
