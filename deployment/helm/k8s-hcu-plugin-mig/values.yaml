@@ -13,7 +13,7 @@ hcuDevicePluginMig:
       resourceRegisterStrategy: mig
     image:
       repository: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin
-      tag: v3.0.0
+      tag: v3.0.1
   nodeSelector:
     hcu-mode: mig
     hygon.com/hcu: "true"

@@ -758,6 +758,12 @@ func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.All
 			"AllocateHAMiHCUs expects 1 ContainerRequest, got %d", len(reqs.ContainerRequests))
 	}
 
+	// Reclaim vHCUs belonging to finished init containers before creating a
+	// new one, so init and app containers on the same card do not overlap.
+	if err := p.RefreshContainerDevices(); err != nil {
+		log.Warningf("pre-Allocate refresh container devices: %v", err)
+	}
+
 	current, err := getPendingPodWithRetry(ctx, nodename)
 	if err != nil {
 		// Never report a partial success (kfd/mkfd/hyhal only, no /dev/dri).
