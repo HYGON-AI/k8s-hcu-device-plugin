@@ -8,8 +8,6 @@ package plugin
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/HYGON-AI/k8s-hcu-device-plugin/internal/pkg/api"
@@ -202,6 +200,34 @@ func (p *DevicePlugin) WatchAndRegister() {
 	}
 }
 
+func (p *DevicePlugin) destroyMarkedVDevice(info markFileInfo, fileName string) {
+	_ = os.RemoveAll(VIRTUAL_HCU_CONF_DIR + "dynamic/" + fileName)
+
+	vdidx := info.vdevIdx
+	if vdidx <= -1 {
+		return
+	}
+
+	var err error
+	for try := 0; try < 5; try++ {
+		err = dcgm.StopVDevice(vdidx)
+		if err == nil || try == 4 {
+			log.V(2).Infof("Stop vHCU %d sucessfully (pod=%s container=%s)", vdidx, info.podUID, info.containerName)
+			for retry := 0; retry < 5; retry++ {
+				err = dcgm.DestroySingleVDevice(vdidx)
+				if err == nil {
+					log.V(2).Infof("Delete vHCU %d sucessfully (pod=%s container=%s)", vdidx, info.podUID, info.containerName)
+					break
+				}
+			}
+			break
+		}
+		log.Errorf("Stop vHCU %d error: %v. Try Again!", vdidx, err)
+	}
+
+	_ = os.Remove(fmt.Sprintf(VIRTUAL_HCU_CONF_DIR+"vdev%d.conf", vdidx))
+}
+
 func (p *DevicePlugin) RefreshContainerDevices() error {
 	files, err := os.ReadDir(VIRTUAL_HCU_CONF_DIR + "dynamic/")
 	if err != nil {
@@ -216,69 +242,55 @@ func (p *DevicePlugin) RefreshContainerDevices() error {
 		return err
 	}
 
-	for _, f := range files {
-		found := false
-		for _, val := range pods.Items {
-			if strings.Contains(f.Name(), string(val.UID)) && !(val.Status.Phase == corev1.PodSucceeded || val.Status.Phase == corev1.PodFailed) {
-				found = true
-			}
-		}
-
-		if !found {
-			// Mark file name layout is "<podUID>_<container>_<devIdx>_<vdevIdx>".
-			// A malformed name must be skipped: Atoi failure would yield index 0
-			// and destroy a live vHCU belonging to another container.
-			tmpstr := strings.Split(f.Name(), "_")
-			if len(tmpstr) < 4 {
-				log.Warningf("Skip unexpected mark file %s", f.Name())
-				continue
-			}
-			vdidx, convErr := strconv.Atoi(tmpstr[3])
-			if convErr != nil {
-				log.Warningf("Skip mark file %s: bad vdev index %q: %v", f.Name(), tmpstr[3], convErr)
-				continue
-			}
-
-			_ = os.RemoveAll(VIRTUAL_HCU_CONF_DIR + "dynamic/" + f.Name())
-
-			var err error
-			if vdidx > -1 {
-				for try := 0; try < 5; try++ {
-					err = dcgm.StopVDevice(vdidx)
-					if err == nil || try == 4 {
-						log.V(2).Infof("Stop vHCU %d sucessfully", vdidx)
-						for retry := 0; retry < 5; retry++ {
-							err = dcgm.DestroySingleVDevice(vdidx)
-							if err == nil {
-								log.V(2).Infof("Delete vHCU %d sucessfully", vdidx)
-								break
-							}
-						}
-						break
-					}
-					log.Errorf("Stop vHCU %d error: %v. Try Again!", vdidx, err)
-				}
-
-				_ = os.Remove(fmt.Sprintf(VIRTUAL_HCU_CONF_DIR+"vdev%d.conf", vdidx))
-			}
-
-		}
-		log.V(3).Infof("Refresh container file %s.", f.Name())
+	podsByUID := make(map[string]*corev1.Pod, len(pods.Items))
+	for i := range pods.Items {
+		podsByUID[string(pods.Items[i].UID)] = &pods.Items[i]
 	}
 
-	for _, val := range pods.Items {
-		errorPod := true
-		for _, file := range files {
-			if strings.Contains(file.Name(), string(val.UID)) {
-				errorPod = false
-			}
+	markNames := make([]string, 0, len(files))
+	for _, f := range files {
+		markNames = append(markNames, f.Name())
+	}
+
+	keptMarks := make([]string, 0, len(files))
+	for _, f := range files {
+		info, ok := parseMarkFileName(f.Name())
+		if !ok {
+			log.Warningf("Skip unexpected mark file %s", f.Name())
+			continue
 		}
-		if util.RequestsVirtualHCU(&val) && errorPod && (val.Status.Phase == corev1.PodRunning || val.Status.Phase == corev1.PodFailed) {
-			_ = util.DeletePod(context.Background(), &val)
+
+		pod := podsByUID[info.podUID]
+		if markFileStillNeeded(pod, info.containerName) {
+			keptMarks = append(keptMarks, f.Name())
+			log.V(3).Infof("Keep mark file %s (pod phase=%v)", f.Name(), podPhaseOrGone(pod))
+			continue
+		}
+
+		log.Infof("Reclaim vHCU for finished container: mark=%s pod=%s container=%s vdev=%d",
+			f.Name(), info.podUID, info.containerName, info.vdevIdx)
+		p.destroyMarkedVDevice(info, f.Name())
+	}
+
+	for i := range pods.Items {
+		val := &pods.Items[i]
+		if !util.RequestsVirtualHCU(val) {
+			continue
+		}
+		if podMissingRequiredMark(val, keptMarks) {
+			log.Warningf("Pod %s/%s missing required vHCU mark file(s); deleting", val.Namespace, val.Name)
+			_ = util.DeletePod(context.Background(), val)
 		}
 	}
 
 	return nil
+}
+
+func podPhaseOrGone(pod *corev1.Pod) string {
+	if pod == nil {
+		return "gone"
+	}
+	return string(pod.Status.Phase)
 }
 
 func (p *DevicePlugin) informerPodHandler() {
@@ -328,19 +340,24 @@ func (p *DevicePlugin) informerPodHandler() {
 				log.Warningf("[UPDATE] unexpected new object type %T", newObj)
 				return
 			}
-			if oldPod.Status.Phase == corev1.PodRunning &&
-				(newPod.Status.Phase == corev1.PodSucceeded || newPod.Status.Phase == corev1.PodFailed) {
+			if !util.RequestsVirtualHCU(newPod) && !util.RequestsVirtualHCU(oldPod) {
+				return
+			}
 
-				log.V(3).Infof("[COMPLETE] Pod %s/%s changed from %s -> %s\n",
-					newPod.Namespace, newPod.Name, oldPod.Status.Phase, newPod.Status.Phase)
-				if util.RequestsVirtualHCU(oldPod) {
-					if err := p.RefreshContainerDevices(); err != nil {
-						log.Errorf("[COMPLETE] refresh container devices failed: %v", err)
-					}
-					if err := p.RegistrInAnnotation(); err != nil {
-						log.Errorf("[COMPLETE] register in annotation failed: %v", err)
-					}
-				}
+			podTerminal := oldPod.Status.Phase == corev1.PodRunning &&
+				(newPod.Status.Phase == corev1.PodSucceeded || newPod.Status.Phase == corev1.PodFailed)
+			initDone := initContainerTerminatedSince(oldPod, newPod)
+			if !podTerminal && !initDone {
+				return
+			}
+
+			log.V(3).Infof("[REFRESH] Pod %s/%s phase %s -> %s initTerminated=%v\n",
+				newPod.Namespace, newPod.Name, oldPod.Status.Phase, newPod.Status.Phase, initDone)
+			if err := p.RefreshContainerDevices(); err != nil {
+				log.Errorf("[REFRESH] refresh container devices failed: %v", err)
+			}
+			if err := p.RegistrInAnnotation(); err != nil {
+				log.Errorf("[REFRESH] register in annotation failed: %v", err)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
