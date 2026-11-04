@@ -49,6 +49,8 @@ spec:
           value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.logLevel }}
         - name: POLICY
           value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.policy }}
+        - name: RESOURCE_PREFIX
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.resourcePrefix }}
         - name: NODE_NAME
           valueFrom:
             fieldRef:

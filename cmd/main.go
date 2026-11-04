@@ -24,6 +24,7 @@ import (
 
 var pulse int
 var resourceRegisterStrategy, policy string
+var resourcePrefix string
 var version = ""
 var resource_mutiple bool
 var logLevel int
@@ -88,6 +89,7 @@ func startHCUMemReporter(resourceName string) {
 func start() {
 
 	log.V(2).Infof("Hygon HCU Device Plugin start ...")
+	log.V(2).Infof("RESOURCE_PREFIX=%s (device UUID prefix %s-)", util.ResourcePrefix(), util.DeviceIDPrefix())
 
 	log.V(2).Infof("Init HCU DCGM: %v \n", dcgm.Init())
 	defer func() {
@@ -131,15 +133,16 @@ func start() {
 		}
 
 	} else if resourceRegisterStrategy == "hami" {
-		// Run hygon.com/hcunum Device Plugin
+		// Run hygon.com/hcunum (or *cunum) Device Plugin
 		go startDevicePlugin([]string{util.GetHAMiResourceName(policy)})
 
 		if resource_mutiple {
-			// Run hygon.com/hcucores Device Plugin
-			go startDevicePlugin([]string{strings.ReplaceAll(util.GetHAMiResourceName(policy), "hcunum", "hcucores")})
-			// Report hygon.com/hcumem via node status patch instead of a Device Plugin,
+			hamiBase := util.GetHAMiResourceName(policy)
+			// Run hygon.com/hcucores (or *cucores) Device Plugin
+			go startDevicePlugin([]string{strings.ReplaceAll(hamiBase, util.ResourceNameNum(), util.ResourceNameCores())})
+			// Report hygon.com/hcumem (or *cumem) via node status patch instead of a Device Plugin,
 			// because the MiB-denominated total exceeds the device plugin list limit.
-			go startHCUMemReporter(util.ResourceNamespace + "/" + strings.ReplaceAll(util.GetHAMiResourceName(policy), "hcunum", "hcumem"))
+			go startHCUMemReporter(util.ResourceNamespace + "/" + strings.ReplaceAll(hamiBase, util.ResourceNameNum(), util.ResourceNameMem()))
 		}
 	}
 
@@ -172,8 +175,13 @@ func main() {
 			return fmt.Errorf("invalid device-split-count %d, must be greater than 0", plugin.DeviceSplitCount)
 		}
 
+		if err := util.InitResourcePrefix(resourcePrefix); err != nil {
+			return err
+		}
+
 		_ = os.Setenv(util.RESOURCE_REGISTER_STRATEGY, resourceRegisterStrategy)
 		_ = os.Setenv("POLICY", policy)
+		_ = os.Setenv("RESOURCE_PREFIX", util.ResourcePrefix())
 		return nil
 	}
 
@@ -244,6 +252,13 @@ func main() {
 			Value:       false,
 			Destination: &resource_mutiple,
 			EnvVars:     []string{"RESOURCE_MULTIPLE"},
+		},
+		&cli.StringFlag{
+			Name:        "resource-prefix",
+			Usage:       "product-family prefix for K8s resource names, HAMi annotations and device UUIDs:\n\t\t[hcu | *cu], default hcu; set *cu for seamless upgrade from legacy *CU clusters",
+			Value:       util.DefaultResourcePrefix,
+			Destination: &resourcePrefix,
+			EnvVars:     []string{"RESOURCE_PREFIX"},
 		},
 	}
 

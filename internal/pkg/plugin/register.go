@@ -77,12 +77,12 @@ func (p *DevicePlugin) apiDevices() (*[]*api.DeviceInfo, error) {
 		}
 		res = append(res, &api.DeviceInfo{
 			Index:   val.DvInd,
-			Id:      "HCU-" + val.DeviceId,
+			Id:      util.FormatDeviceUUID(val.DeviceId),
 			Count:   int32(DeviceSplitCount),
 			Devmem:  int32(val.MemoryTotal / 1024 / 1024),
 			Devcore: 100,
 			Numa:    numas[0].NumaNode,
-			Type:    "HCU-" + devTypeName,
+			Type:    util.FormatDeviceUUID(devTypeName),
 			Health:  health,
 		})
 	}
@@ -132,12 +132,12 @@ func (p *DevicePlugin) apiDevicesRemain() (*[]*api.DeviceInfo, error) {
 
 		res = append(res, &api.DeviceInfo{
 			Index:   val.DvInd,
-			Id:      "HCU-" + val.DeviceId,
+			Id:      util.FormatDeviceUUID(val.DeviceId),
 			Count:   int32(DeviceSplitCount - vdeviceCount),
 			Devmem:  devmem,
 			Devcore: devcore,
 			Numa:    numas[0].NumaNode,
-			Type:    "HCU-" + devTypeName,
+			Type:    util.FormatDeviceUUID(devTypeName),
 			Health:  health,
 		})
 	}

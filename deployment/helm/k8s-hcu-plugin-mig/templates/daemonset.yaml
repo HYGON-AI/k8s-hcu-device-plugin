@@ -32,6 +32,8 @@ spec:
           value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.logSeverity }}
         - name: LOG_LEVEL
           value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.logLevel }}
+        - name: RESOURCE_PREFIX
+          value: {{ quote .Values.hcuDevicePluginMig.hcuDpCntr.env.resourcePrefix }}
         - name: NODE_NAME
           valueFrom:
             fieldRef:

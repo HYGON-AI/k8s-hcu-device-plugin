@@ -22,7 +22,7 @@ spec:
         hcu: "on"
       serviceAccountName: hcu-device-plugin
       containers:
-      - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.0
+      - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.1
         name: hcu-dp-cntr
         securityContext:
           privileged: true
@@ -39,6 +39,8 @@ spec:
             value: "0"
           - name: "RESOURCE_MULTIPLE"
             value: "false"
+          - name: "RESOURCE_PREFIX"
+            value: "hcu"
           - name: "TOPOLOGY_REGISTER"
             value: "false"
           - name: "DEVICE_SPLIT_COUNT"

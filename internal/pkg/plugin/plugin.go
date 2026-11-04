@@ -179,10 +179,10 @@ func (p *DevicePlugin) ListAndWatch(e *pluginapi.Empty, s pluginapi.DevicePlugin
 		return p.ListAndWatchMigHCUs(e, s)
 	}
 
-	if strings.Contains(p.Resource, "hcunum") {
+	if strings.Contains(p.Resource, util.ResourceNameNum()) {
 		return p.ListAndWatchHAMiHCUs(e, s)
 	}
-	if strings.Contains(p.Resource, "hcucores") {
+	if strings.Contains(p.Resource, util.ResourceNameCores()) {
 		return p.ListAndWatchHCUCores(e, s)
 	}
 	return nil
@@ -321,7 +321,7 @@ func (p *DevicePlugin) ListAndWatchHAMiHCUs(e *pluginapi.Empty, s pluginapi.Devi
 	allHAMiHCUs := make(map[string]dcgm.DeviceInfo, len(allPhysicalDevices)*DeviceSplitCount)
 	for _, physicalDevice := range allPhysicalDevices {
 		for idx := 0; idx < DeviceSplitCount; idx++ {
-			allHAMiHCUs["HCU-"+physicalDevice.DeviceId+"-fake-"+strconv.Itoa(idx)] = physicalDevice
+			allHAMiHCUs[util.FormatDeviceUUID(physicalDevice.DeviceId)+"-fake-"+strconv.Itoa(idx)] = physicalDevice
 		}
 	}
 	p.setHAMiHCUs(allHAMiHCUs)
@@ -392,11 +392,11 @@ func (p *DevicePlugin) Allocate(ctx context.Context, r *pluginapi.AllocateReques
 		return p.AllocateMigHCUs(ctx, r)
 	}
 
-	if strings.Contains(p.Resource, "hcunum") {
+	if strings.Contains(p.Resource, util.ResourceNameNum()) {
 		return p.AllocateHAMiHCUs(ctx, r)
 	}
 
-	if strings.Contains(p.Resource, "hcucores") {
+	if strings.Contains(p.Resource, util.ResourceNameCores()) {
 		return p.AllocateCores(ctx, r)
 	}
 
@@ -748,6 +748,16 @@ func buildDevicesWithNUMAFromMigInfo(devices map[string]dcgm.MigInfo) []*plugina
 func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	responses := pluginapi.AllocateResponse{}
 	nodename := util.NodeName
+
+	// EraseNextDeviceTypeFromAnnotation patches the API server but does not
+	// refresh the local pod copy, so a second ContainerRequest in the same
+	// call would reuse a stale device list. Kubelet also allocates one
+	// container at a time, so reject anything other than a single request.
+	if len(reqs.ContainerRequests) != 1 {
+		return &pluginapi.AllocateResponse{}, fmt.Errorf(
+			"AllocateHAMiHCUs expects 1 ContainerRequest, got %d", len(reqs.ContainerRequests))
+	}
+
 	current, err := getPendingPodWithRetry(ctx, nodename)
 	if err != nil {
 		// Never report a partial success (kfd/mkfd/hyhal only, no /dev/dri).
@@ -758,125 +768,108 @@ func (p *DevicePlugin) AllocateHAMiHCUs(ctx context.Context, reqs *pluginapi.All
 	}
 	log.V(2).Infof("Allocate for pod %s/%s uid [%s] \n", current.Namespace, current.Name, current.UID)
 
-	err = util.UpdateContainerIndexAnnotations(current)
+	req := reqs.ContainerRequests[0]
+	// ctr is resolved from the flat segment index (InitContainers then
+	// Containers); do not discard this return value.
+	ctr, devreq, err := util.GetNextDeviceRequest(util.HygonHCUDevice, *current)
+	log.V(2).Infoln("deviceAllocateFromAnnotation=", devreq, "container=", ctr.Name)
 	if err != nil {
-		return &pluginapi.AllocateResponse{}, err
-	}
-
-	current, err = util.GetPod(ctx, current.Namespace, current.Name)
-	if err != nil {
-		return &pluginapi.AllocateResponse{}, err
-	}
-	ctrIndex := util.GetCurrentContainerIndex(current)
-	if ctrIndex < 0 || ctrIndex >= len(current.Spec.Containers) {
-		log.Errorf("Invalid container index %d for pod %s/%s with %d containers",
-			ctrIndex, current.Namespace, current.Name, len(current.Spec.Containers))
 		util.PodAllocationFailed(nodename, current, NodeLockHCU)
-		return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid container index %d for pod %s/%s",
-			ctrIndex, current.Namespace, current.Name)
+		return &pluginapi.AllocateResponse{}, err
+	}
+	if len(devreq) != len(req.DevicesIDs) {
+		util.PodAllocationFailed(nodename, current, NodeLockHCU)
+		return &pluginapi.AllocateResponse{}, errors.New("device number not matched")
 	}
 
-	for idx := range reqs.ContainerRequests {
-		_, devreq, err := util.GetNextDeviceRequest(util.HygonHCUDevice, *current)
-		log.V(2).Infoln("deviceAllocateFromAnnotation=", devreq)
-		if err != nil {
+	err = util.EraseNextDeviceTypeFromAnnotation(util.HygonHCUDevice, *current)
+	if err != nil {
+		util.PodAllocationFailed(nodename, current, NodeLockHCU)
+		return &pluginapi.AllocateResponse{}, err
+	}
+
+	car := pluginapi.ContainerAllocateResponse{}
+	addCommonRWMDevices(&car)
+	addHyhalMount(&car)
+
+	for _, val := range devreq {
+		log.Infof("Allocating device Serial Number: %s", val.UUID)
+		var devSerialNumber string
+		succeedCount, err := fmt.Sscanf(val.UUID, util.DeviceUUIDScanFormat(), &devSerialNumber)
+		if err != nil || succeedCount == 0 || devSerialNumber == "" {
+			log.Errorf("Invalid request device uuid: %s", val.UUID)
 			util.PodAllocationFailed(nodename, current, NodeLockHCU)
-			return &pluginapi.AllocateResponse{}, err
-		}
-		if len(devreq) != len(reqs.ContainerRequests[idx].DevicesIDs) {
-			util.PodAllocationFailed(nodename, current, NodeLockHCU)
-			return &pluginapi.AllocateResponse{}, errors.New("device number not matched")
+			return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid request device uuid %s", val.UUID)
 		}
 
-		err = util.EraseNextDeviceTypeFromAnnotation(util.HygonHCUDevice, *current)
-		if err != nil {
-			util.PodAllocationFailed(nodename, current, NodeLockHCU)
-			return &pluginapi.AllocateResponse{}, err
-		}
-
-		car := pluginapi.ContainerAllocateResponse{}
-		addCommonRWMDevices(&car)
-		addHyhalMount(&car)
-
-		for _, val := range devreq {
-			log.Infof("Allocating device Serial Number: %s", val.UUID)
-			var devSerialNumber string
-			succeedCount, err := fmt.Sscanf(val.UUID, "HCU-%s", &devSerialNumber)
-			if err != nil || succeedCount == 0 || devSerialNumber == "" {
-				log.Errorf("Invalid request device uuid: %s", val.UUID)
-				util.PodAllocationFailed(nodename, current, NodeLockHCU)
-				return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid request device uuid %s", val.UUID)
-			}
-
-			deviceInfo, ok := p.getHAMiHCU(val.UUID + "-fake-0")
-			if !ok {
-				log.Errorf("Device serial number %s not found in mapper", devSerialNumber)
-				util.PodAllocationFailed(nodename, current, NodeLockHCU)
-				return &pluginapi.AllocateResponse{}, fmt.Errorf("device serial number %s not found in mapper", devSerialNumber)
-			}
-
-			if err := appendDRIDevicesFromPCI(deviceInfo.PciBusNumber, &car); err != nil {
-				log.Errorf("Device Card and Render Found Error by BUS id %s, Error:%v", deviceInfo.PciBusNumber, err)
-				util.PodAllocationFailed(nodename, current, NodeLockHCU)
-				return &pluginapi.AllocateResponse{}, fmt.Errorf("device Card and Render Found Error by BUS id %s, Error:%v", deviceInfo.PciBusNumber, err)
-			}
-
-			physicalDeviceInfo := deviceInfo
-
-			if val.Usedcores == 100 && val.Usedmem == int32(physicalDeviceInfo.MemoryTotal/1024/1024) {
-				_, _ = p.CreateMarkFile(current, &current.Spec.Containers[ctrIndex], physicalDeviceInfo.DvInd, -1)
-			}
-		}
-
-		//Create virtual HCU and Make Resource Mark file
-		physicalDeviceInfo, ok := p.getHAMiHCU(devreq[0].UUID + "-fake-0")
+		deviceInfo, ok := p.getHAMiHCU(val.UUID + "-fake-0")
 		if !ok {
-			log.Errorf("Device %s not found in mapper", devreq[0].UUID)
+			log.Errorf("Device serial number %s not found in mapper", devSerialNumber)
 			util.PodAllocationFailed(nodename, current, NodeLockHCU)
-			return &pluginapi.AllocateResponse{}, fmt.Errorf("device %s not found in mapper", devreq[0].UUID)
+			return &pluginapi.AllocateResponse{}, fmt.Errorf("device serial number %s not found in mapper", devSerialNumber)
 		}
-		log.V(3).Infoln("devreqs=", len(devreq), "usedmem=", devreq[0].Usedmem, "usedcores=", devreq[0].Usedcores, ":", physicalDeviceInfo.MemoryTotal/1024/1024)
-		if len(devreq) < 2 && devreq[0].Usedmem < int32(physicalDeviceInfo.MemoryTotal/1024/1024) {
-			// Usedcores is a percentage (1-100). 0 means hcucores was omitted: create a
-			// memory-only vHCU that shares CUs with other vHCUs (hy-smi:
-			// --vdevice-compute-units 0 → cu_count: 0).
-			actualCores := 0
-			if devreq[0].Usedcores > 0 {
-				actualCores = int(math.Ceil(float64(devreq[0].Usedcores) * float64(physicalDeviceInfo.ComputeUnit) / 100.0))
-				if actualCores < 1 {
-					actualCores = 1
-				}
-			}
-			log.V(3).Infof("CreateVDevices dvInd=%d actualCores=%d usedmem=%d (usedcores%%=%d)",
-				physicalDeviceInfo.DvInd, actualCores, devreq[0].Usedmem, devreq[0].Usedcores)
-			vIdx, err := dcgm.CreateVDevices(physicalDeviceInfo.DvInd, 1, []int{actualCores}, []int{int(devreq[0].Usedmem)})
-			if err != nil {
-				util.PodAllocationFailed(nodename, current, NodeLockHCU)
-				return &responses, err
-			}
-			markFile, err := p.CreateMarkFile(current, &current.Spec.Containers[ctrIndex], physicalDeviceInfo.DvInd, vIdx[0])
-			if err != nil {
-				log.Errorf("Create mark file for vHCU %d failed: %v", vIdx[0], err)
-				_ = dcgm.StopVDevice(vIdx[0])
-				_ = dcgm.DestroySingleVDevice(vIdx[0])
-				util.PodAllocationFailed(nodename, current, NodeLockHCU)
-				return &pluginapi.AllocateResponse{}, fmt.Errorf("create mark file for vHCU %d failed: %w", vIdx[0], err)
-			}
-			hostConf := VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("vdev%d.conf", vIdx[0])
-			containerConf := VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("docker/vdev%d.conf", vIdx[0])
-			if err := mountVDeviceConf(&car, hostConf, containerConf); err != nil {
-				log.Errorf("Invalid vdev conf for vHCU %d: %v", vIdx[0], err)
-				_ = os.Remove(markFile)
-				_ = dcgm.StopVDevice(vIdx[0])
-				_ = dcgm.DestroySingleVDevice(vIdx[0])
-				util.PodAllocationFailed(nodename, current, NodeLockHCU)
-				return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid vdev conf for vHCU %d: %w", vIdx[0], err)
-			}
+
+		if err := appendDRIDevicesFromPCI(deviceInfo.PciBusNumber, &car); err != nil {
+			log.Errorf("Device Card and Render Found Error by BUS id %s, Error:%v", deviceInfo.PciBusNumber, err)
+			util.PodAllocationFailed(nodename, current, NodeLockHCU)
+			return &pluginapi.AllocateResponse{}, fmt.Errorf("device Card and Render Found Error by BUS id %s, Error:%v", deviceInfo.PciBusNumber, err)
 		}
-		responses.ContainerResponses = append(responses.ContainerResponses, &car)
+
+		physicalDeviceInfo := deviceInfo
+
+		if val.Usedcores == 100 && val.Usedmem == int32(physicalDeviceInfo.MemoryTotal/1024/1024) {
+			_, _ = p.CreateMarkFile(current, &ctr, physicalDeviceInfo.DvInd, -1)
+		}
 	}
+
+	//Create virtual HCU and Make Resource Mark file
+	physicalDeviceInfo, ok := p.getHAMiHCU(devreq[0].UUID + "-fake-0")
+	if !ok {
+		log.Errorf("Device %s not found in mapper", devreq[0].UUID)
+		util.PodAllocationFailed(nodename, current, NodeLockHCU)
+		return &pluginapi.AllocateResponse{}, fmt.Errorf("device %s not found in mapper", devreq[0].UUID)
+	}
+	log.V(3).Infoln("devreqs=", len(devreq), "usedmem=", devreq[0].Usedmem, "usedcores=", devreq[0].Usedcores, ":", physicalDeviceInfo.MemoryTotal/1024/1024)
+	if len(devreq) < 2 && devreq[0].Usedmem < int32(physicalDeviceInfo.MemoryTotal/1024/1024) {
+		// Usedcores is a percentage (1-100). 0 means hcucores was omitted: create a
+		// memory-only vHCU that shares CUs with other vHCUs (hy-smi:
+		// --vdevice-compute-units 0 → cu_count: 0).
+		actualCores := 0
+		if devreq[0].Usedcores > 0 {
+			actualCores = int(math.Ceil(float64(devreq[0].Usedcores) * float64(physicalDeviceInfo.ComputeUnit) / 100.0))
+			if actualCores < 1 {
+				actualCores = 1
+			}
+		}
+		log.V(3).Infof("CreateVDevices dvInd=%d actualCores=%d usedmem=%d (usedcores%%=%d)",
+			physicalDeviceInfo.DvInd, actualCores, devreq[0].Usedmem, devreq[0].Usedcores)
+		vIdx, err := dcgm.CreateVDevices(physicalDeviceInfo.DvInd, 1, []int{actualCores}, []int{int(devreq[0].Usedmem)})
+		if err != nil {
+			util.PodAllocationFailed(nodename, current, NodeLockHCU)
+			return &responses, err
+		}
+		markFile, err := p.CreateMarkFile(current, &ctr, physicalDeviceInfo.DvInd, vIdx[0])
+		if err != nil {
+			log.Errorf("Create mark file for vHCU %d failed: %v", vIdx[0], err)
+			_ = dcgm.StopVDevice(vIdx[0])
+			_ = dcgm.DestroySingleVDevice(vIdx[0])
+			util.PodAllocationFailed(nodename, current, NodeLockHCU)
+			return &pluginapi.AllocateResponse{}, fmt.Errorf("create mark file for vHCU %d failed: %w", vIdx[0], err)
+		}
+		hostConf := VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("vdev%d.conf", vIdx[0])
+		containerConf := VIRTUAL_HCU_CONF_DIR + fmt.Sprintf("docker/vdev%d.conf", vIdx[0])
+		if err := mountVDeviceConf(&car, hostConf, containerConf); err != nil {
+			log.Errorf("Invalid vdev conf for vHCU %d: %v", vIdx[0], err)
+			_ = os.Remove(markFile)
+			_ = dcgm.StopVDevice(vIdx[0])
+			_ = dcgm.DestroySingleVDevice(vIdx[0])
+			util.PodAllocationFailed(nodename, current, NodeLockHCU)
+			return &pluginapi.AllocateResponse{}, fmt.Errorf("invalid vdev conf for vHCU %d: %w", vIdx[0], err)
+		}
+	}
+	responses.ContainerResponses = append(responses.ContainerResponses, &car)
+
 	log.V(3).Infoln("response=", responses)
-	_ = util.DeleteContainerIndexAnnotations(current)
 	util.PodAllocationTrySuccess(nodename, util.HygonHCUDevice, NodeLockHCU, current)
 	return &responses, nil
 }

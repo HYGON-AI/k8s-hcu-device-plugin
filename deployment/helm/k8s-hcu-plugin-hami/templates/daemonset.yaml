@@ -36,6 +36,8 @@ spec:
           value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.policy }}
         - name: RESOURCE_MULTIPLE
           value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.resourceMultiple }}
+        - name: RESOURCE_PREFIX
+          value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.resourcePrefix }}
         - name: TOPOLOGY_REGISTER
           value: {{ quote .Values.hcuDevicePlugin.hcuDpCntr.env.topologyRegister }}
         - name: NODE_NAME

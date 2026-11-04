@@ -13,7 +13,7 @@ kubectl label nodes <node-name> hcu=on
 
 详细安装部署方法参考《HCU-Device-Plugin组件vHCU动态切分模式安装部署》
 
-HCU-Device-Plugin向k8s集群注册的vHCU资源名为hygon.com/hcunum，用户可以通过查看HCU节点k8s资源详情确认vHCU资源是否注册成功：
+HCU-Device-Plugin向k8s集群注册的vHCU资源名默认为`hygon.com/hcunum`（当环境变量`RESOURCE_PREFIX=*cu`时为`hygon.com/*cunum`）。用户可以通过查看HCU节点k8s资源详情确认vHCU资源是否注册成功：
 
 ```
 kubectl describe node <node-name>
@@ -67,7 +67,12 @@ vhcu-scheduler-plugin-85c77b87d4-2vlxm     1/1     Running   0               12d
 
 用户可以根据所需要的vHCU数量、HCU计算核心CU百分比和HCU显存容量，在k8s工作负载yaml配置文件内的resource limit字段的设置进行HCU资源申请（resource limit字段取值只能为整数）。
 
-使用限制：每个container最多可以申请一张 vHCU，且不支持initContainers中申请vHCU。
+使用限制：
+
+- 每个 container（含 initContainer）最多可以申请一张动态 vHCU
+- **支持**在 `initContainers` 中申请 vHCU；init 与业务容器按启动顺序分别分配，动态 vHCU 在对应容器结束后回收
+- 节点 `Allocated` 资源按 Kubernetes 规则统计（`max(业务容器合计, init 最大值)`），不会把 init 与业务资源简单相加
+- 若需兼容旧版 *CU 资源名，部署 Device Plugin / 调度器时设置 `RESOURCE_PREFIX=*cu`，工作负载中使用 `hygon.com/*cunum`、`*cucores`、`*cumem`，设备 UUID 注解使用 `*CU-<serial>` 前缀
 
 ### 2.2.1 指定算力与显存申请vHCU
 
@@ -227,4 +232,43 @@ spec:
           hygon.com/hcunum: 1   #申请1个vHCU
           hygon.com/hcumem: 16384  #指定申请vHCU的显存为16384MB(16GB)
 ```
+
+### 2.2.7 在 initContainers 中申请 vHCU
+
+init 容器与业务容器均可声明动态 vHCU 资源。示例（省略镜像内具体脚本）：
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hcu-init-vhcu-demo
+spec:
+  restartPolicy: Never
+  initContainers:
+    - name: init-hello
+      image: harbor.sourcefind.cn:5443/hcu/admin/base/pytorch:2.1.0-ubuntu22.04-dtk24.04.2-py3.10
+      command: ["/bin/bash", "-c", "echo init-hello && sleep 1"]
+    - name: init-vhcu-check
+      image: harbor.sourcefind.cn:5443/hcu/admin/base/pytorch:2.1.0-ubuntu22.04-dtk24.04.2-py3.10
+      command: ["/bin/bash", "-c", "sleep infinity"]
+      resources:
+        limits:
+          hygon.com/hcunum: 1
+          hygon.com/hcucores: 10
+          hygon.com/hcumem: 1024
+  containers:
+    - name: hcu-matmul
+      image: harbor.sourcefind.cn:5443/hcu/admin/base/pytorch:2.1.0-ubuntu22.04-dtk24.04.2-py3.10
+      command: ["/bin/bash", "-c", "sleep infinity"]
+      resources:
+        limits:
+          hygon.com/hcunum: 1
+          hygon.com/hcucores: 30
+          hygon.com/hcumem: 10240
+    - name: hello-cn
+      image: harbor.sourcefind.cn:5443/hcu/admin/base/pytorch:2.1.0-ubuntu22.04-dtk24.04.2-py3.10
+      command: ["/bin/bash", "-c", "while true; do echo 你好; sleep 1; done"]
+```
+
+说明：HAMi / vHCU-Scheduler 通常只为「申请了设备的容器」写入设备注解段；Device Plugin 会将其展开并对齐到对应的 init / 业务容器后再执行 Allocate。
 

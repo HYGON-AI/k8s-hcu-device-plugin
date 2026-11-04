@@ -10,6 +10,7 @@ hcuDevicePlugin:
       logSeverity: INFO
       policy: "0"
       pulse: "30"
+      resourcePrefix: hcu
       resourceRegisterStrategy: mixed
     image:
       repository: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin
