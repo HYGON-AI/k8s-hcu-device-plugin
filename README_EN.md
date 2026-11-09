@@ -221,9 +221,9 @@ Set `RESOURCE_PREFIX=*cu` on both the device plugin and the scheduler when upgra
 
 **Note**: the plugin and scheduler must use the same prefix; do not mix `hcu` and `*cu` during a rolling upgrade.
 
-### Node Label Prefix (LABEL_PREFIX) Must Match the nodeAffinity
+### Node Label Prefix (LABEL_PREFIX) Must Match nodeAffinity and nodeSelector
 
-This DaemonSet finds HCU nodes through `nodeAffinity` on a node label, `hygon.com/hcu` with value `"true"` by default:
+This component's DaemonSets find HCU nodes through a node label — via `nodeAffinity` (mixed mode) or `nodeSelector` (MIG mode) — `hygon.com/hcu` with value `"true"` by default. Taking `nodeAffinity` as an example:
 
 ```yaml
 affinity:
@@ -274,7 +274,7 @@ affinity:
 
 Check in this order:
 
-- Whether the label exists on the node and its key matches the `nodeAffinity` exactly (case, dot placement — `hygon.com/hcu`, not `hygon.com/hcu=true`);
+- Whether the label exists on the node and its key matches the `nodeAffinity` / `nodeSelector` exactly (case, dot placement — `hygon.com/hcu`, not `hygon.com/hcu=true`);
 - Whether the label-node Pod is healthy; `kubectl -n kube-system logs <label-node-pod>` prints `Label prefix: <prefix>`;
 - Whether the node was filtered out by the `hcu-mode: mig` / `hcu: on` exclusion terms (the mixed manifest excludes those node types — use the matching MIG / HAMi manifest instead).
 
@@ -293,7 +293,7 @@ Install and load the HCU driver on the node, then confirm that `hy-smi` or `hy-s
 kubectl apply -f ../k8s-hcu-label-node/deployment/static/k8s-hcu-label-node.yaml
 ```
 
-If label-node uses a non-default `LABEL_PREFIX`, this component's `nodeAffinity` / `nodeSelector` must use the same prefix, or the DaemonSet will create no Pods at all. See [Node Label Prefix (LABEL_PREFIX) Must Match the nodeAffinity](#node-label-prefix-label_prefix-must-match-the-nodeaffinity) above.
+If label-node uses a non-default `LABEL_PREFIX`, this component's `nodeAffinity` / `nodeSelector` must use the same prefix, or the DaemonSet will create no Pods at all. See [Node Label Prefix (LABEL_PREFIX) Must Match nodeAffinity and nodeSelector](#node-label-prefix-label_prefix-must-match-nodeaffinity-and-nodeselector) above.
 
 ### 3. Physical HCU + Pre-partitioned vHCU (mixed mode, default)
 
