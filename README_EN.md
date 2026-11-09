@@ -221,6 +221,63 @@ Set `RESOURCE_PREFIX=*cu` on both the device plugin and the scheduler when upgra
 
 **Note**: the plugin and scheduler must use the same prefix; do not mix `hcu` and `*cu` during a rolling upgrade.
 
+### Node Label Prefix (LABEL_PREFIX) Must Match the nodeAffinity
+
+This DaemonSet finds HCU nodes through `nodeAffinity` on a node label, `hygon.com/hcu` with value `"true"` by default:
+
+```yaml
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: hygon.com/hcu      # must match LABEL_PREFIX of k8s-hcu-label-node
+          operator: In
+          values:
+          - "true"
+```
+
+`k8s-hcu-label-node` decides which key to write via the `LABEL_PREFIX` environment variable (default `hygon.com/hcu`; the extra labels are `<prefix>.name`, `<prefix>.cu-count`, `<prefix>.vram`, `<prefix>.driver-version`). **If the two differ, no node carries the matching label, the DaemonSet's desired replica count becomes 0, and not a single Pod is created.** No error is reported — it just silently does nothing.
+
+> Keep the two prefixes apart: `RESOURCE_PREFIX` only changes extended resource names (`hygon.com/hcu` resource, `hcunum`, …) and has nothing to do with node labels; node labels are controlled solely by `LABEL_PREFIX`.
+
+**Steps to follow when changing `LABEL_PREFIX`**
+
+1. Read the prefix label-node is actually using:
+
+   ```bash
+   kubectl -n kube-system get ds hcu-label-node -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LABEL_PREFIX")].value}'
+   ```
+
+2. Update every place in this project that matches that label:
+
+   | Deployment method | Files to edit |
+   |-------------------|---------------|
+   | Static manifest (mixed) | the `key` inside `nodeAffinity` in `deployment/static/k8s-hcu-plugin.yaml` |
+   | Static manifest (MIG) | the `nodeSelector` key in `deployment/static/k8s-hcu-plugin-mig.yaml` |
+   | Static manifest (HAMi) | **No change needed**: it uses the manual label `hcu: "on"`, unaffected by `LABEL_PREFIX` |
+   | Helm (mixed) | `deployment/helm/k8s-hcu-plugin/templates/daemonset.yaml` (`nodeAffinity` is hard-coded, so edit the template) |
+   | Helm (MIG) | the `hygon.com/hcu` entry of `nodeSelector` in the MIG chart's `values.yaml` (leave `hcu-mode: mig` as is) |
+   | Helm (HAMi) | **No change needed**: `nodeSelector` is `hcu: "on"` |
+
+   If a cluster mixes the mixed and MIG manifests, both must be updated — otherwise only one mode's Pods will come up. HAMi nodes need the label added manually (`kubectl label node <node> hcu=on`); label-node never writes it. On such nodes label-node still sets `hygon.com/hcu=true`, and having both labels is normal.
+
+3. Verify after re-applying:
+
+   ```bash
+   kubectl -n kube-system get ds hcu-dp-ds hcu-dp-ds-mig hcu-dp-ds-hami
+   # DESIRED should equal the number of HCU nodes; 0 means the label key still does not match
+   kubectl get node <node> --show-labels | tr ',' '\n' | grep hygon
+   ```
+
+**Troubleshooting: the DaemonSet exists but shows `DESIRED: 0`**
+
+Check in this order:
+
+- Whether the label exists on the node and its key matches the `nodeAffinity` exactly (case, dot placement — `hygon.com/hcu`, not `hygon.com/hcu=true`);
+- Whether the label-node Pod is healthy; `kubectl -n kube-system logs <label-node-pod>` prints `Label prefix: <prefix>`;
+- Whether the node was filtered out by the `hcu-mode: mig` / `hcu: on` exclusion terms (the mixed manifest excludes those node types — use the matching MIG / HAMi manifest instead).
+
 ## Deployment
 
 Manifests live under `deployment/static/` (direct `kubectl apply`) and `deployment/helm/` (Helm charts).
@@ -233,8 +290,10 @@ Install and load the HCU driver on the node, then confirm that `hy-smi` or `hy-s
 
 ```bash
 # Deploy k8s-hcu-label-node to label HCU nodes with hygon.com/hcu=true automatically
-kubectl apply -f ../k8s-hcu-label-node/deployment/
+kubectl apply -f ../k8s-hcu-label-node/deployment/static/k8s-hcu-label-node.yaml
 ```
+
+If label-node uses a non-default `LABEL_PREFIX`, this component's `nodeAffinity` / `nodeSelector` must use the same prefix, or the DaemonSet will create no Pods at all. See [Node Label Prefix (LABEL_PREFIX) Must Match the nodeAffinity](#node-label-prefix-label_prefix-must-match-the-nodeaffinity) above.
 
 ### 3. Physical HCU + Pre-partitioned vHCU (mixed mode, default)
 
