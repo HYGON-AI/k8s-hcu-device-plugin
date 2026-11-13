@@ -219,6 +219,63 @@ k8s-hcu-device-plugin/
 
 **注意**：plugin 与 scheduler 必须使用相同前缀；同一集群滚动升级时不要混用 `hcu` / `*cu`。
 
+### 节点标签前缀（LABEL_PREFIX）必须与 nodeAffinity 和 nodeSelector 一致
+
+本组件的 DaemonSet 通过 `nodeAffinity`（mixed 模式）或 `nodeSelector`（MIG 模式）匹配节点标签来定位 HCU 节点，默认键为 `hygon.com/hcu`，值 `"true"`。以 `nodeAffinity` 为例：
+
+```yaml
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: hygon.com/hcu      # ← 必须与 k8s-hcu-label-node 的 LABEL_PREFIX 一致
+          operator: In
+          values:
+          - "true"
+```
+
+`k8s-hcu-label-node` 会用环境变量 `LABEL_PREFIX` 决定写入哪个键（默认 `hygon.com/hcu`，附加标签为 `<前缀>.name` / `<前缀>.cu-count` / `<前缀>.vram` / `<前缀>.driver-version`）。**两者不一致时，节点上不会出现被匹配的标签，DaemonSet 的期望副本数会变成 0，Pod 一个都不会创建**，也不会报错，只表现为静默不生效。
+
+> 注意区分两套前缀：`RESOURCE_PREFIX` 只影响扩展资源名（`hygon.com/hcu` 资源、`hcunum` 等），与节点标签无关；节点标签只由 `LABEL_PREFIX` 决定。
+
+**修改了 `LABEL_PREFIX` 时的同步步骤**
+
+1. 确认 label-node 实际使用的前缀：
+
+   ```bash
+   kubectl -n kube-system get ds hcu-label-node -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LABEL_PREFIX")].value}'
+   ```
+
+2. 把本组件中所有匹配该标签的位置改成相同前缀：
+
+   | 部署方式 | 需要修改的文件 |
+   |---------|---------------|
+   | 静态清单（mixed） | `deployment/static/k8s-hcu-plugin.yaml` 中 `nodeAffinity` 的 `key` |
+   | 静态清单（MIG） | `deployment/static/k8s-hcu-plugin-mig.yaml` 中 `nodeSelector` 的键 |
+   | 静态清单（HAMi） | **无需修改**：使用手动标签 `hcu: "on"`，不受 `LABEL_PREFIX` 影响 |
+   | Helm（mixed） | `deployment/helm/k8s-hcu-plugin/templates/daemonset.yaml`（`nodeAffinity` 为硬编码，需直接改模板） |
+   | Helm（MIG） | MIG chart 的 `values.yaml` 中 `nodeSelector` 里的 `hygon.com/hcu`（`hcu-mode: mig` 保持不变） |
+   | Helm（HAMi） | **无需修改**：`nodeSelector` 为 `hcu: "on"` |
+
+   同一集群里混合使用 mixed / MIG 清单时，这两处都要改，否则只有一种模式的 Pod 起不来。HAMi 模式的节点需手动打 `hcu=on`（`kubectl label node <node> hcu=on`），label-node 不会写该标签；这类节点上 label-node 仍会打 `hygon.com/hcu=true`，两个标签并存是正常的。
+
+3. 重新 apply 后验证：
+
+   ```bash
+   kubectl -n kube-system get ds hcu-dp-ds hcu-dp-ds-mig hcu-dp-ds-hami
+   # DESIRED 应为 HCU 节点数；若为 0，说明标签键仍未对上
+   kubectl get node <node> --show-labels | tr ',' '\n' | grep hygon
+   ```
+
+**排查：DaemonSet 已创建但 `DESIRED: 0`**
+
+按顺序检查：
+
+- 节点上是否存在标签，且键名与 `nodeAffinity` / `nodeSelector` 完全一致（含大小写、点号位置，如 `hygon.com/hcu` 不能写成 `hygon.com/hcu=true`）；
+- label-node Pod 是否正常，`kubectl -n kube-system logs <label-node-pod>` 中会打印 `Label prefix: <前缀>`；
+- 节点是否被 `hcu-mode: mig` / `hcu: on` 排除条件过滤掉（mixed 清单会排除这两类节点，需改用对应的 MIG / HAMi 清单）。
+
 ## 部署
 
 部署清单位于 `deployment/static/`（kubectl 直部署）和 `deployment/helm/`（Helm Chart）。
@@ -231,8 +288,10 @@ k8s-hcu-device-plugin/
 
 ```bash
 # 部署 k8s-hcu-label-node，自动为 HCU 节点打标签 hygon.com/hcu=true
-kubectl apply -f ../k8s-hcu-label-node/deployment/
+kubectl apply -f ../k8s-hcu-label-node/deployment/static/k8s-hcu-label-node.yaml
 ```
+
+如果 label-node 使用了非默认的 `LABEL_PREFIX`，本组件的 `nodeAffinity` / `nodeSelector` 必须同步为相同前缀，否则 DaemonSet 不会创建任何 Pod。详见上文 [节点标签前缀（LABEL_PREFIX）必须与 nodeAffinity 和 nodeSelector 一致](#节点标签前缀label_prefix必须与-nodeaffinity-和-nodeselector-一致)。
 
 ### 3. 物理 HCU + 预切分 vHCU（mixed 模式，默认）
 
