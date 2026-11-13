@@ -7,7 +7,7 @@ Copyright 2026 Hygon Information Technology Co., Ltd.
 
 Hygon HCU Device Plugin 是一个 Kubernetes 设备插件（Device Plugin），以 DaemonSet 方式部署到每个 HCU 节点，实现 [Kubernetes Device Plugin API](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/)，将节点上的海光 HCU 资源注册到集群，供 Pod 申请使用。
 
-当前版本：**v3.0.0**
+当前版本：**v3.0.2**
 
 ## 目录
 
@@ -391,7 +391,7 @@ helm install hcu-dp-mig deployment/helm/k8s-hcu-plugin-mig/
 helm install hcu-dp-hami deployment/helm/k8s-hcu-plugin-hami/
 ```
 
-> **注意**：Helm Chart 与 static 清单当前均使用镜像 tag `v3.0.0`。若构建了其他版本，需同步修改 `values.yaml` 中的 `image.tag`。
+> **注意**：Helm Chart 与 static 清单当前均使用镜像 tag `v3.0.2`。若构建了其他版本，需同步修改 `values.yaml` 中的 `image.tag`。
 
 ## 使用示例
 
@@ -557,11 +557,11 @@ Device 0:
 版本号由 `git describe --tags --dirty` 自动推导，无需手工维护；仓库中没有 tag 时 `build.sh` 会直接报错退出。
 
 ```bash
-git tag v3.0.0          # 首次构建前需先打 tag
+git tag v3.0.2          # 首次构建前需先打 tag
 ./build.sh              # 编译二进制、构建 Docker 镜像、导出离线 tar 包
 ```
 
-构建产物（以下 `${VERSION}` 即 `git describe` 的输出，例如 `v3.0.0`）：
+构建产物（以下 `${VERSION}` 即 `git describe` 的输出，例如 `v3.0.2`）：
 
 | 产物 | 路径 / 名称 |
 |------|-------------|
@@ -577,7 +577,7 @@ go mod tidy
 go build -ldflags "-X 'main.version=$(git describe --tags --dirty)'" -o k8s-device-plugin cmd/main.go
 ```
 
-> 工作区有未提交改动时 `git describe --dirty` 会带上 `-dirty` 后缀（如 `v3.0.0-dirty`），该后缀符合 Docker tag 命名规则，可直接用作镜像 tag。
+> 工作区有未提交改动时 `git describe --dirty` 会带上 `-dirty` 后缀（如 `v3.0.2-dirty`），该后缀符合 Docker tag 命名规则，可直接用作镜像 tag。
 
 > 镜像运行时通过 `LD_LIBRARY_PATH` 加载节点挂载的 `/opt/hyhal/lib`，无需在镜像内打包 HCU 底层库。
 
