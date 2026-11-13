@@ -14,5 +14,5 @@ hcuDevicePlugin:
       resourceRegisterStrategy: mixed
     image:
       repository: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin
-      tag: v3.0.1
+      tag: v3.0.2
 kubernetesClusterDomain: cluster.local
