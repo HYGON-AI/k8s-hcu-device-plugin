@@ -24,7 +24,7 @@ spec:
         - key: CriticalAddonsOnly
           operator: Exists
       containers:
-        - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.1
+        - image: harbor.sourcefind.cn:5443/hcu/admin/base/hcu-device-plugin:v3.0.2
           name: hcu-dp-cntr
           securityContext:
             privileged: true

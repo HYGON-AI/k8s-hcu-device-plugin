@@ -219,132 +219,182 @@ func refreshDeviceHealth(kind string, devs []*pluginapi.Device, dvInd map[string
 
 // ListAndWatchHCUs
 func (p *DevicePlugin) ListAndWatchHCUs(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
-	strategy := os.Getenv(util.RESOURCE_REGISTER_STRATEGY)
+	rebuild := func() ([]*pluginapi.Device, map[string]int) {
+		util.ReconcileDCGMDevices()
+		strategy := os.Getenv(util.RESOURCE_REGISTER_STRATEGY)
 
-	hcus := util.GetAllPhysicalDevices()
-	for deviceID, physicalDevice := range hcus {
-		if strategy == "mixed" && physicalDevice.VDeviceCount > 0 {
-			delete(hcus, deviceID)
+		hcus := util.GetAllPhysicalDevices()
+		for deviceID, physicalDevice := range hcus {
+			if strategy == "mixed" && physicalDevice.VDeviceCount > 0 {
+				delete(hcus, deviceID)
+			}
 		}
+		p.setHCUs(hcus)
+
+		log.V(2).Infof("Found %d HCUs", len(hcus))
+
+		devs := buildDevicesWithNUMAFromHCUInfo(hcus)
+		dvInd := make(map[string]int, len(hcus))
+		for id, device := range hcus {
+			dvInd[id] = device.DvInd
+		}
+		return devs, dvInd
 	}
-	p.setHCUs(hcus)
 
-	log.V(2).Infof("Found %d HCUs", len(hcus))
-
-	devs := buildDevicesWithNUMAFromHCUInfo(hcus)
-	dvInd := make(map[string]int, len(hcus))
-	for id, device := range hcus {
-		dvInd[id] = device.DvInd
-	}
-
-	return p.watchDevices(s, devs, func(devs []*pluginapi.Device) {
-		refreshDeviceHealth("HCU", devs, dvInd)
-	})
+	devs, dvInd := rebuild()
+	return p.watchDevices(s, "HCU", devs, dvInd, rebuild)
 }
 
 func (p *DevicePlugin) ListAndWatchHCUCores(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
-	deviceCount, _ := dcgm.DeviceCount()
-	devs := make([]*pluginapi.Device, deviceCount*100)
-	func() {
-		i := 0
+	rebuild := func() ([]*pluginapi.Device, map[string]int) {
+		util.ReconcileDCGMDevices()
+		deviceCount, _ := dcgm.DeviceCount()
+		devs := make([]*pluginapi.Device, 0, deviceCount*100)
 		for id := 0; id < deviceCount*100; id++ {
-			dev := &pluginapi.Device{
+			devs = append(devs, &pluginapi.Device{
 				ID:     strconv.Itoa(id),
 				Health: pluginapi.Healthy,
-			}
-
-			devs[i] = dev
-			i++
+			})
 		}
-	}()
+		return devs, nil
+	}
 
-	return p.watchDevices(s, devs, nil)
+	devs, dvInd := rebuild()
+	return p.watchDevices(s, "", devs, dvInd, rebuild)
 }
 
 func (p *DevicePlugin) ListAndWatchVirtualHCUs(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
+	rebuild := func() ([]*pluginapi.Device, map[string]int) {
+		util.ReconcileDCGMDevices()
+		allVirtualHCUs := util.GetAllVirtualHCUs()
+		resourceName := "share" + strings.Split(p.Resource, "share")[1]
 
-	allVirtualHCUs := util.GetAllVirtualHCUs()
-	resourceName := "share" + strings.Split(p.Resource, "share")[1]
-
-	virtualHCUs := make(map[string]dcgm.VDeviceInfo)
-	if _, exists := allVirtualHCUs[resourceName]; exists {
-		virtualHCUs = make(map[string]dcgm.VDeviceInfo, len(allVirtualHCUs[resourceName]))
-		for _, virtualHCU := range allVirtualHCUs[resourceName] {
-			virtualHCUs["vdev"+strconv.Itoa(virtualHCU.VdvInd)] = virtualHCU
+		virtualHCUs := make(map[string]dcgm.VDeviceInfo)
+		if _, exists := allVirtualHCUs[resourceName]; exists {
+			virtualHCUs = make(map[string]dcgm.VDeviceInfo, len(allVirtualHCUs[resourceName]))
+			for _, virtualHCU := range allVirtualHCUs[resourceName] {
+				virtualHCUs["vdev"+strconv.Itoa(virtualHCU.VdvInd)] = virtualHCU
+			}
 		}
+		p.setVirtualHCUs(virtualHCUs)
+
+		log.V(2).Infof("Found %d Virtual HCUs", len(virtualHCUs))
+
+		devs := buildDevicesWithNUMAFromVDeviceInfo(virtualHCUs)
+		dvInd := make(map[string]int, len(virtualHCUs))
+		for id, device := range virtualHCUs {
+			dvInd[id] = device.DvInd
+		}
+		return devs, dvInd
 	}
-	p.setVirtualHCUs(virtualHCUs)
 
-	log.V(2).Infof("Found %d Virtual HCUs", len(virtualHCUs))
-
-	devs := buildDevicesWithNUMAFromVDeviceInfo(virtualHCUs)
-	dvInd := make(map[string]int, len(virtualHCUs))
-	for id, device := range virtualHCUs {
-		dvInd[id] = device.DvInd
-	}
-
-	return p.watchDevices(s, devs, func(devs []*pluginapi.Device) {
-		refreshDeviceHealth("Virtual HCU", devs, dvInd)
-	})
+	devs, dvInd := rebuild()
+	return p.watchDevices(s, "Virtual HCU", devs, dvInd, rebuild)
 }
 
 func (p *DevicePlugin) ListAndWatchMigHCUs(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
+	rebuild := func() ([]*pluginapi.Device, map[string]int) {
+		util.ReconcileDCGMDevices()
+		allMigHCUs := util.GetAllMigHCUs()
+		resourceName := "mig" + strings.Split(p.Resource, "mig")[1]
 
-	allMigHCUs := util.GetAllMigHCUs()
-	resourceName := "mig" + strings.Split(p.Resource, "mig")[1]
-
-	migHCUs := make(map[string]dcgm.MigInfo)
-	if _, exists := allMigHCUs[resourceName]; exists {
-		migHCUs = make(map[string]dcgm.MigInfo, len(allMigHCUs[resourceName]))
-		for _, migHCU := range allMigHCUs[resourceName] {
-			migHCUs[migHCU.UUID] = migHCU
+		migHCUs := make(map[string]dcgm.MigInfo)
+		if _, exists := allMigHCUs[resourceName]; exists {
+			migHCUs = make(map[string]dcgm.MigInfo, len(allMigHCUs[resourceName]))
+			for _, migHCU := range allMigHCUs[resourceName] {
+				migHCUs[migHCU.UUID] = migHCU
+			}
 		}
+		p.setMigHCUs(migHCUs)
+
+		log.V(2).Infof("Found %d MIG HCUs", len(migHCUs))
+
+		devs := buildDevicesWithNUMAFromMigInfo(migHCUs)
+		dvInd := make(map[string]int, len(migHCUs))
+		for id, device := range migHCUs {
+			dvInd[id] = device.DvInd
+		}
+		return devs, dvInd
 	}
-	p.setMigHCUs(migHCUs)
 
-	log.V(2).Infof("Found %d MIG HCUs", len(migHCUs))
-
-	devs := buildDevicesWithNUMAFromMigInfo(migHCUs)
-	dvInd := make(map[string]int, len(migHCUs))
-	for id, device := range migHCUs {
-		dvInd[id] = device.DvInd
-	}
-
-	return p.watchDevices(s, devs, func(devs []*pluginapi.Device) {
-		refreshDeviceHealth("MIG HCU", devs, dvInd)
-	})
+	devs, dvInd := rebuild()
+	return p.watchDevices(s, "MIG HCU", devs, dvInd, rebuild)
 }
 
 func (p *DevicePlugin) ListAndWatchHAMiHCUs(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
-
-	allPhysicalDevices := util.GetAllPhysicalDevices()
-	allHAMiHCUs := make(map[string]dcgm.DeviceInfo, len(allPhysicalDevices)*DeviceSplitCount)
-	for _, physicalDevice := range allPhysicalDevices {
-		for idx := 0; idx < DeviceSplitCount; idx++ {
-			allHAMiHCUs[util.FormatDeviceUUID(physicalDevice.DeviceId)+"-fake-"+strconv.Itoa(idx)] = physicalDevice
+	rebuild := func() ([]*pluginapi.Device, map[string]int) {
+		util.ReconcileDCGMDevices()
+		allPhysicalDevices := util.GetAllPhysicalDevices()
+		allHAMiHCUs := make(map[string]dcgm.DeviceInfo, len(allPhysicalDevices)*DeviceSplitCount)
+		for _, physicalDevice := range allPhysicalDevices {
+			for idx := 0; idx < DeviceSplitCount; idx++ {
+				allHAMiHCUs[util.FormatDeviceUUID(physicalDevice.DeviceId)+"-fake-"+strconv.Itoa(idx)] = physicalDevice
+			}
 		}
+		p.setHAMiHCUs(allHAMiHCUs)
+
+		log.V(2).Infof("Found %d HAMi HCUs", len(allHAMiHCUs))
+
+		devs := buildDevicesWithNUMAFromHCUInfo(allHAMiHCUs)
+		dvInd := make(map[string]int, len(allHAMiHCUs))
+		for id, device := range allHAMiHCUs {
+			dvInd[id] = device.DvInd
+		}
+		return devs, dvInd
 	}
-	p.setHAMiHCUs(allHAMiHCUs)
 
-	log.V(2).Infof("Found %d HAMi HCUs", len(allHAMiHCUs))
-
-	devs := buildDevicesWithNUMAFromHCUInfo(allHAMiHCUs)
-	dvInd := make(map[string]int, len(allHAMiHCUs))
-	for id, device := range allHAMiHCUs {
-		dvInd[id] = device.DvInd
-	}
-
-	return p.watchDevices(s, devs, func(devs []*pluginapi.Device) {
-		refreshDeviceHealth("HAMi HCU", devs, dvInd)
-	})
+	devs, dvInd := rebuild()
+	return p.watchDevices(s, "HAMi HCU", devs, dvInd, rebuild)
 }
 
-// watchDevices sends initial device list and then handles heartbeat and signal events.
-// If updateHealth is not nil, it will be called on every heartbeat to refresh device health.
+// sameDeviceIDs reports whether two device lists advertise the same ID set.
+func sameDeviceIDs(a, b []*pluginapi.Device) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	ids := make(map[string]struct{}, len(a))
+	for _, d := range a {
+		ids[d.ID] = struct{}{}
+	}
+	for _, d := range b {
+		if _, ok := ids[d.ID]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// applyWatchRebuild updates the ListAndWatch snapshot after a heartbeat rebuild.
+// A transient empty rebuild keeps the previous non-empty list so capacity does not
+// flap to zero during HCU reset windows; a later non-empty rebuild still restores.
+func applyWatchRebuild(
+	kind string,
+	devs []*pluginapi.Device,
+	dvInd map[string]int,
+	newDevs []*pluginapi.Device,
+	newDvInd map[string]int,
+) ([]*pluginapi.Device, map[string]int) {
+	if newDevs == nil {
+		return devs, dvInd
+	}
+	if len(newDevs) == 0 && len(devs) > 0 {
+		log.Warningf("ListAndWatch %s rebuild returned 0 devices, keeping previous %d", kind, len(devs))
+		return devs, dvInd
+	}
+	if !sameDeviceIDs(devs, newDevs) {
+		log.V(2).Infof("ListAndWatch %s device set changed: %d -> %d", kind, len(devs), len(newDevs))
+	}
+	return newDevs, newDvInd
+}
+
+// watchDevices sends the initial device list, then on each heartbeat rebuilds the
+// snapshot (so HCU reset / DCGM reinit can restore kubelet capacity) and refreshes health.
 func (p *DevicePlugin) watchDevices(
 	s pluginapi.DevicePlugin_ListAndWatchServer,
+	kind string,
 	devs []*pluginapi.Device,
-	updateHealth func([]*pluginapi.Device),
+	dvInd map[string]int,
+	rebuild func() ([]*pluginapi.Device, map[string]int),
 ) error {
 	s.Send(&pluginapi.ListAndWatchResponse{Devices: devs})
 
@@ -352,8 +402,12 @@ loop:
 	for {
 		select {
 		case <-p.Heartbeat:
-			if updateHealth != nil {
-				updateHealth(devs)
+			if rebuild != nil {
+				newDevs, newDvInd := rebuild()
+				devs, dvInd = applyWatchRebuild(kind, devs, dvInd, newDevs, newDvInd)
+			}
+			if kind != "" && dvInd != nil {
+				refreshDeviceHealth(kind, devs, dvInd)
 			}
 			s.Send(&pluginapi.ListAndWatchResponse{Devices: devs})
 		case <-p.signal:
