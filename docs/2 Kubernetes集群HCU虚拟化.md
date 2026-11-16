@@ -1,6 +1,6 @@
 ## 2.1 组件安装部署
 
-Kubernetes集群通过设备插件HCU-Device-Plugin与vHCU-Scheduler（或[HAMi](https://github.com/Project-HAMi/HAMi)调度器）实现节点上vHCU的动态切分和自动回收。k8s集群内通过yaml编排文件中resources资源中的hygon.com/hcunum、hygon.com/hcucores和hygon.com/hcumem进行vhcu的动态切分请求，无需在使用vHCU前手动进行vHCU实例划分。
+Kubernetes集群通过设备插件HCU-Device-Plugin与vHCU-Scheduler（或[HAMi](https://github.com/Project-HAMi/HAMi)调度器）实现节点上vHCU的动态切分和自动回收。k8s集群内通过yaml编排文件中resources资源中的`hygon.com/hcunum`、`hygon.com/hcucores`和`hygon.com/hcumem`进行vhcu的动态切分请求，无需在使用vHCU前手动进行vHCU实例划分。
 
 ### 2.1.1 HAMi模式HCU-Device-Plugin安装部署
 
@@ -19,7 +19,7 @@ HCU-Device-Plugin向k8s集群注册的vHCU资源名默认为`hygon.com/hcunum`�
 kubectl describe node <node-name>
 ```
 
-如下为一个vHCU节点的资源注册实例，Capacity 字段中“hygon.com/hcunum: 4”表示该节点最多可分配4个可用vHCU资源。
+如下为一个vHCU节点的资源注册实例，Capacity 字段中“`hygon.com/hcunum`: 4”表示该节点最多可分配4个可用vHCU资源。
 
 ```
 Capacity:
@@ -134,7 +134,7 @@ spec:
 
 ### 2.2.3 将任务分配到特定 kubernetes 节点
 
-要将任务分配给特定的 kubernetes节点，只需在注释字段中添加 hygon.com/use-nodename 注解。
+要将任务分配给特定的 kubernetes节点，只需在注释字段中添加 `hygon.com/use-nodename` 注解。
 
 ```
 apiVersion: v1
@@ -156,11 +156,11 @@ spec:
           hygon.com/hcumem: 16384  #指定申请vHCU的显存为16384MB(16GB)
 ```
 
-相似地，要将任务禁止分配给特定的 HCU，在注释字段中分配 hygon.com/nouse-nodename。
+相似地，要将任务禁止分配给特定的 HCU，在注释字段中分配 `hygon.com/nouse-nodename`。
 
 ### 2.2.4 将任务分配给特定HCU
 
-要将任务分配给特定的 HCU，只需在注释字段中添加 hygon.com/use-gpuuuid注解。
+要将任务分配给特定的 HCU，只需在注释字段中添加 `hygon.com/use-gpuuuid`注解。
 
 ```
 apiVersion: v1
@@ -182,11 +182,11 @@ spec:
           hygon.com/hcumem: 16384  #指定申请vHCU的显存为16384MB(16GB)
 ```
 
-相似地，要将任务禁止分配给特定的 HCU，在注释字段中分配 hygon.com/nouse-gpuuuid。
+相似地，要将任务禁止分配给特定的 HCU，在注释字段中分配 `hygon.com/nouse-gpuuuid`。
 
 ### 2.2.5 将任务分配给指定HCU类型
 
-要将任务分配给指定类型的HCU，只需在注解中添加hygon.com/use-hcutype注解。
+要将任务分配给指定类型的HCU，只需在注解中添加`hygon.com/use-hcutype`注解。
 
 ```
 apiVersion: v1
@@ -208,11 +208,11 @@ spec:
           hygon.com/hcumem: 16384  #指定申请vHCU的显存为16384MB(16GB)
 ```
 
-相似地，要将任务禁止分配给指定类型的 HCU，在注释字段中分配 hygon.com/nouse-hcutype。
+相似地，要将任务禁止分配给指定类型的 HCU，在注释字段中分配 `hygon.com/nouse-hcutype`。
 
 ### 2.2.6 仅指定显存申请vHCU
 
-HCU驱动从6.3.16版本后开始支持vHCU仅指定显存共享物理卡算力的切分方式，vHCU-Scheduler从v2.4.0版本开始支持仅指定显存申请vHCU。仅指定显存申请vHCU，只需资源申请时缺省hygon.com/hcucores算力资源申请即可。(若需要指定显存切分请下载6.3.16-V1.1.0c.run版本驱动)
+HCU驱动从6.3.16版本后开始支持vHCU仅指定显存共享物理卡算力的切分方式，vHCU-Scheduler从v2.4.0版本开始支持仅指定显存申请vHCU。仅指定显存申请vHCU，只需资源申请时缺省`hygon.com/hcucores`算力资源申请即可。(若需要指定显存切分请下载6.3.16-V1.1.0c.run版本驱动)
 
 ```
 apiVersion: v1
