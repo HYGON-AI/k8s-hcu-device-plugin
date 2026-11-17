@@ -26,7 +26,7 @@ HCU-Device-Plugin提供三种工作模式：
 
 HCU-Device-Plugin的三种工作模式，通过不同 YAML 文件部署，V2.3.0版本起HCU-Device-Plugin将之前多种部署方式的device-plugin镜像进行整合，使用唯一镜像进行部署（如hcu-device-plugin:v3.0.0），采用环境变量RESOURCE_REGISTER_STRATEGY参数的方式区分不同应用场景：
 
-表 2.1 HCU-Device-Plugin 资源注册策略
+表 4.1 HCU-Device-Plugin 资源注册策略
 
 | RESOURCE_REGISTER_STRATEGY | 含义                                                         | 资源类型（`RESOURCE_PREFIX=hcu`）                            |
 | -------------------------- | ------------------------------------------------------------ | ----------------------------------- |
@@ -57,11 +57,11 @@ HCU-Device-Plugin的三种工作模式，通过不同 YAML 文件部署，V2.3.0
 
 HAMi（`hami`）模式下还支持在 **initContainers** 中申请动态 vHCU，详见《Kubernetes集群HCU虚拟化》与《生态支持》文档中的说明。
 
-## 2.1 标准模式
+## 4.1 标准模式
 
 本文档涉及的yaml文件可以从[社区资源中心](https://download.sourcefind.cn:65024/5/main/Kubernetes%E6%8F%92%E4%BB%B6)进行下载，镜像可以从[光源镜像仓库](https://developer.sourcefind.cn/servicelist)直接拉取。
 
-### 2.1.1 安装部署
+### 4.1.1 安装部署
 
 k8s集群以DaemonSet形式部署标准模式HCU-Device-Plugin，DaemonSet部署命令如下：
 
@@ -70,7 +70,7 @@ k8s集群以DaemonSet形式部署标准模式HCU-Device-Plugin，DaemonSet部署
 kubectl apply -f  k8s-hcu-plugin.yaml
 ```
 
-### 2.1.2 部署验证
+### 4.1.2 部署验证
 
 用户可以通过查看HCU-Device-Plugin的Pod运行情况验证HCU-Device-Plugin是否部署成功：
 
@@ -123,7 +123,7 @@ Allocatable:
     pods:                           110
 ```
 
-### 2.1.3 应用实例
+### 4.1.3 应用实例
 
 与其他k8s资源一样，用户可以根据所需要的HCU数量，在k8s工作负载yaml配置文件内的resource limit字段的设置进行HCU资源申请（resource limit字段取值只能为整数）。
 
@@ -192,7 +192,7 @@ Device 0:
 
 【vHCU使用限制】：每个container最多可以申请一张 vHCU。当申请多于 1 张 vHCU 时，K8s 资源池会削减申请数量的 vHCU，容器内只有一张vHCU 会生效。
 
-## 2.2 MIG模式
+## 4.2 MIG模式
 
 本文档涉及的yaml文件可以从[社区资源中心](https://download.sourcefind.cn:65024/5/main/Kubernetes%E6%8F%92%E4%BB%B6)下载，镜像可以从[光源镜像仓库](https://developer.sourcefind.cn/servicelist)直接拉取。
 
@@ -200,7 +200,7 @@ Device 0:
 
 【注意】开启MIG功能之后，vHCU虚拟化功能不可用。
 
-### 2.2.1 安装部署
+### 4.2.1 安装部署
 
 使用如下命令部署MIG模式的device-plugin
 
@@ -210,7 +210,7 @@ kubectl label nodes <node-name> hcu-mode=mig
 kubectl  apply  -f  k8s-hcu-plugin-mig.yaml
 ```
 
-### 2.2.2 部署验证
+### 4.2.2 部署验证
 
 用户可以通过查看HCU-Device-Plugin的Pod运行情况验证MIG模式的HCU-Device-Plugin是否部署成功：
 
@@ -257,7 +257,7 @@ Allocatable:
   pods:                          110
 ```
 
-### 2.2.3 应用实例
+### 4.2.3 应用实例
 
 以下是一个k8s工作负载调用MIG实例的示例：
 
