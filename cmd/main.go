@@ -29,6 +29,7 @@ var version = ""
 var resource_mutiple bool
 var logLevel int
 var logSeverity string
+var visibleDevices string
 
 func startDevicePlugin(resources []string) {
 	l := plugin.HCULister{
@@ -179,6 +180,8 @@ func main() {
 			return err
 		}
 
+		util.SetVisibleDevices(visibleDevices)
+
 		_ = os.Setenv(util.RESOURCE_REGISTER_STRATEGY, resourceRegisterStrategy)
 		_ = os.Setenv("POLICY", policy)
 		_ = os.Setenv("RESOURCE_PREFIX", util.ResourcePrefix())
@@ -259,6 +262,12 @@ func main() {
 			Value:       util.DefaultResourcePrefix,
 			Destination: &resourcePrefix,
 			EnvVars:     []string{"RESOURCE_PREFIX"},
+		},
+		&cli.StringFlag{
+			Name:        "visible-devices",
+			Usage:       "comma-separated whitelist of physical HCU indices or PCI bus IDs to expose (e.g. 0,1 or 0000:06:00.0,0000:09:00.0), or all/none",
+			Destination: &visibleDevices,
+			EnvVars:     []string{"HCU_VISIBLE_DEVICES", "DCU_VISIBLE_DEVICES"},
 		},
 	}
 
