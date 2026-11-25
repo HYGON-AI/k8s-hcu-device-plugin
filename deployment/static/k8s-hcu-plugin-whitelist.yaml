@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hygon Information Technology Co., Ltd.
+#
+# Example multi-DaemonSet deployment using Node Labels + HCU_VISIBLE_DEVICES
+# (following the GKE / NVIDIA device-plugin node-label pattern).
+#
+# Label nodes by pool, e.g.:
+#   kubectl label node dcu-bw10-0001.host.hh-d.brainpp.cn hcu-pool=mix-2
+#   kubectl label node dcu-bw10-0002.host.hh-d.brainpp.cn hcu-pool=full
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hcu-device-plugin-mix-2
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: hcu-dp-ds-mix-2
+  template:
+    metadata:
+      labels:
+        name: hcu-dp-ds-mix-2
+    spec:
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      nodeSelector:
+        hygon.com/hcu: "true"
+        hcu-pool: mix-2
+      containers:
+      - image: <your-registry>/hcu-device-plugin:v3.0.2-whitelist
+        name: hcu-dp-cntr
+        securityContext:
+          privileged: true
+        env:
+          - name: "PULSE"
+            value: "30"
+          - name: "RESOURCE_REGISTER_STRATEGY"
+            value: "mixed"
+          - name: "LOG_SEVERITY"
+            value: "INFO"
+          - name: "LOG_LEVEL"
+            value: "2"
+          - name: "POLICY"
+            value: "0"
+          - name: "RESOURCE_PREFIX"
+            value: "hcu"
+          - name: "HCU_VISIBLE_DEVICES"
+            value: "0,1"
+          - name: "NODE_NAME"
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+        volumeMounts:
+          - name: dp
+            mountPath: /var/lib/kubelet/device-plugins
+          - name: dev
+            mountPath: /dev
+          - name: etc-vdev
+            mountPath: /etc/vdev
+            readOnly: true
+          - name: hyhal
+            mountPath: /opt/hyhal
+            readOnly: true
+      volumes:
+        - name: dp
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: etc-vdev
+          hostPath:
+            path: /etc/vdev
+            type: DirectoryOrCreate
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: hyhal
+          hostPath:
+            path: /opt/hyhal
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: hcu-device-plugin-full
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: hcu-dp-ds-full
+  template:
+    metadata:
+      labels:
+        name: hcu-dp-ds-full
+    spec:
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      nodeSelector:
+        hygon.com/hcu: "true"
+        hcu-pool: full
+      containers:
+      - image: <your-registry>/hcu-device-plugin:v3.0.2-whitelist
+        name: hcu-dp-cntr
+        securityContext:
+          privileged: true
+        env:
+          - name: "PULSE"
+            value: "30"
+          - name: "RESOURCE_REGISTER_STRATEGY"
+            value: "mixed"
+          - name: "LOG_SEVERITY"
+            value: "INFO"
+          - name: "LOG_LEVEL"
+            value: "2"
+          - name: "POLICY"
+            value: "0"
+          - name: "RESOURCE_PREFIX"
+            value: "hcu"
+          - name: "HCU_VISIBLE_DEVICES"
+            value: "all"
+          - name: "NODE_NAME"
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+        volumeMounts:
+          - name: dp
+            mountPath: /var/lib/kubelet/device-plugins
+          - name: dev
+            mountPath: /dev
+          - name: etc-vdev
+            mountPath: /etc/vdev
+            readOnly: true
+          - name: hyhal
+            mountPath: /opt/hyhal
+            readOnly: true
+      volumes:
+        - name: dp
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: etc-vdev
+          hostPath:
+            path: /etc/vdev
+            type: DirectoryOrCreate
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: hyhal
+          hostPath:
+            path: /opt/hyhal

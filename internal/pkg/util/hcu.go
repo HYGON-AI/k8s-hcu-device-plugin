@@ -292,7 +292,7 @@ func GetAllPhysicalDevices() map[string]dcgm.DeviceInfo {
 	for _, hcuDeviceInfo := range hcuDeviceInfos {
 		physicalDeviceInfos[hcuDeviceInfo.PciBusNumber] = hcuDeviceInfo
 	}
-	return physicalDeviceInfos
+	return filterPhysicalDevices(physicalDeviceInfos, resolveVisibleSpec())
 }
 
 func RequestsHCU(pod *corev1.Pod) bool {
